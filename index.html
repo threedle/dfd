@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Deep Feature Deformation Weights</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" href="assets/pineapple-icon-144.png">
+  <link href="style.css" rel="stylesheet">
+  <link rel="stylesheet" href="./assets/css/Highlight-Clean.css">
+  <link rel="stylesheet" href="./assets/css/styles.css">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3.0.1/es5/tex-mml-chtml.js"></script>
+  <style>
+    /* from https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css */
+    @font-face {
+      font-family: 'Academicons';
+      font-style: normal;
+      font-weight: 400;
+      font-display: block;
+      src: url('https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/fonts/academicons.eot') format('embedded-opentype'),
+        url('https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/fonts/academicons.ttf') format('truetype'),
+        url('https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/fonts/academicons.woff') format('woff'),
+        url('https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/fonts/academicons.svg') format('svg');
+    }
+
+    .ai {
+      font-family: 'Academicons';
+      font-weight: 400;
+      -moz-osx-font-smoothing: grayscale;
+      -webkit-font-smoothing: antialiased;
+      display: inline-block;
+      font-style: normal;
+      font-variant: normal;
+      text-rendering: auto;
+      line-height: 1;
+    }
+
+    .ai-arxiv:before {
+      content: "\e974";
+    }
+  </style>
+
+  <meta name="description" content="Deep Feature Deformation Weights">
+  <meta name="keywords" content="3D feature distillation, mesh deformation, neural fields, 2D foundation models">
+
+  <meta property='og:title' content='DFD' />
+  <meta property='og:url' content='https://threedle.github.io/dfd/' />
+  <meta property='og:image'
+    content='assets/teaser.png' />
+  <meta property="og:type" content="website" />
+</head>
+
+<body>
+  <section class="intro" aria-label="intro">
+    <a href="https://3dl.cs.uchicago.edu" aria-label="3DL threedle home">
+      <div class="logobox">
+        <img src="assets/threedle-icon-160.png" alt="3DL threedle logo">
+      </div>
+    </a>
+    <div class="titlebox">
+      <h1>Deep Feature Deformation Weights</h1>
+    </div>
+    <nav>
+      <a href="https://cvpr.thecvf.com/" class="venue" aria-label="venue"><i class="icon fas fa-map-marker-alt" aria-hidden="true"></i>CVPR
+        2026</a>
+      <a href="https://arxiv.org/abs/2601.12527" aria-label="paper pdf">
+        <i class="icon fas fa-file-pdf"></i>Paper
+      </a>
+      <a href="https://arxiv.org/abs/2601.12527"><i class="icon ai ai-arxiv"></i>arXiv</a>
+      <a href="https://github.com/threedle/dfd" aria-label="code github"><i
+          class="icon fab fa-github"></i>Code</a>
+    </nav>
+    <div class="authors" aria-label="authors">
+      <span><a href="https://rgliu.com/">Richard Liu</a></span>
+      <span><a href="https://itailang.github.io/">Itai Lang</a></span>
+      <span><a href="https://people.cs.uchicago.edu/~ranahanocka/">Rana Hanocka</a></span>
+    </div>
+    <div class="affiliations" aria-label="affiliations" style="font-size: large;">University of Chicago</div>
+  </section>
+  <section aria-label="teaser" class="teaser">
+    TODO: Add spinning mp4s of teaser pulls
+    </div>
+    </div>
+  </section>
+  <section>
+    </div>
+    <p class="graybox">
+      <b>Abstract.</b> <i>Handle-based mesh deformation is a classic paradigm in computer graphics which enables intuitive edits from sparse controls. Classical techniques are fast and precise, but require users to know the ideal distribution of handles apriori, which is often unintuitive and inconsistent across visually similar shapes. Handle sets cannot be adjusted easily, as weights are typically optimized through energies defined by the handle choices. Modern data-driven methods, on the other hand, provide semantic edits but sacrifice fine-grained control and speed. We propose a technique that achieves the best of both worlds: deep feature proximity yields smooth, visual-aware deformation weights with no additional regularization. Importantly, these weights are computed in real-time for any surface point, unlike prior methods which require expensive optimization. We introduce barycentric feature distillation, an improved feature distillation pipeline which leverages the full visual signal from shape renders to make distillation complexity robust to mesh resolution. This enables high resolution meshes to be processed in minutes versus potentially hours for prior methods. We preserve and extend classical properties through feature space constraints and locality weighting. Our field representation enables automatic visual symmetry detection, which we use to produce symmetry-preserving deformations. We show a proof-of-concept application which can produce deformations for meshes up to 1 million faces in real-time on a consumer-grade machine.</i>
+    </p>
+
+  </section>
+  <section class="gallery" aria-label="gallery">
+    <h2>Gallery</h2>
+    <img class="mediumwidth blcent" src="assets/gallery_full.png"
+      alt="network diagram">
+    <p class="graybox">
+    Handle translation results from the APAP dataset.
+    </p>
+  </section>
+  <section>
+    <h2>Barycentric Feature Distillation</h2>
+    <img class="mediumwidth blcent" src="assets/barycentricdistillation.png"
+      alt="network diagram">
+    <p class="graybox">
+      <b>Barycentric Feature Distillation.</b> TODO
+    </p>
+  </section>
+  <section>
+    <h2>Visual Symmetry Detection</h2>
+    <img class="mediumwidth blcent" src="assets/symmetry.png" alt="symmetry">
+    <p class="graybox">
+      <b>Visual Symmetry Detection.</b> TODO
+    </p>
+  </section>
+  <section class="gallery">
+    <h2>Deformation Application</h2>
+    TODO: three.js interactive deformation application. just need to have the feature tensor pre-loaded and to implement click and drag framework.
+    TODO: eventually we may want to have the ability to let user upload their own meshes, distill on the website, and then deform them interactively.
+  </section>
+  <script>
+    // upon load, restart and sync the other video in the pair
+    const vidloadsyncers = document.getElementsByClassName("vidloadsync");
+    for (const elem of vidloadsyncers) {
+      const srcshapeVid = elem.getElementsByClassName("srcshape").item(0);
+      const rsltshapeVid = elem.getElementsByClassName("rsltshape").item(0);
+      srcshapeVid?.addEventListener("loadeddata", e => {
+        if (rsltshapeVid) {
+          rsltshapeVid.currentTime = 0;
+        }
+      });
+      rsltshapeVid?.addEventListener("loadeddata", e => {
+        if (srcshapeVid) {
+          srcshapeVid.currentTime = 0;
+        }
+      });
+    }
+  </script>
+  <section>
+    <h2>Acknowledgements</h2>
+    <p class="graybox"> This project was funded by NSF 2402894, 2304481, the United States - Israel Binational Science Foundation (BSF) 2022363, gifts from Adobe, Snap, Google, and The Bennett Family AI + Science Collaborative Research Program.
+    </p>
+    <p class="graybox"> Website template made by Nam Anh Dinh.
+    </p>
+  </section>
+  <section>
+    <h2>Bibtex</h2>
+    <p class="graybox">TODO
+    </p>
+  </section>
+</body>
+
+</html>
