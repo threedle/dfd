@@ -312,6 +312,101 @@ video {
   }
 }
 
+.results-carousel {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 120%;
+  margin-left: -10%;
+  gap: 0;
+}
+
+.carousel-viewport {
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--bordrad);
+}
+
+.carousel-track {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: 12px;
+  transition: transform 0.45s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
+}
+
+.carousel-track.no-transition {
+  transition: none;
+}
+
+.carousel-track video {
+  flex: 0 0 auto;
+  height: 100%;
+  width: auto;
+  display: block;
+  border-radius: var(--bordrad);
+}
+
+.carousel-track video.carousel-quarter-height {
+  height: 25%;
+}
+
+.carousel-track video.carousel-half-height {
+  height: 50%;
+}
+
+.carousel-arrow {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--accent);
+  color: rgb(242, 247, 252);
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: none;
+  transition: background-color 0.15s;
+  z-index: 5;
+}
+
+.carousel-arrow:hover {
+  background-color: var(--accentlight);
+}
+
+.carousel-arrow-left {
+  margin-right: 10px;
+}
+
+.carousel-arrow-right {
+  margin-left: 10px;
+}
+
+@media (max-width: 500px) {
+  .results-carousel {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .carousel-arrow {
+    width: 32px;
+    height: 32px;
+    font-size: 0.85rem;
+  }
+
+  .carousel-arrow-left {
+    margin-right: 6px;
+  }
+
+  .carousel-arrow-right {
+    margin-left: 6px;
+  }
+}
+
 .gallery {
   --promptfontsz: 1.1rem;
 
@@ -433,6 +528,33 @@ video {
 
 section {
   margin: 4px auto;
+}
+
+section.teaser {
+  margin-top: 0;
+  margin-bottom: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  overflow: visible;
+}
+
+section.teaser + section {
+  margin-top: 0;
+}
+
+section.teaser video {
+  width: 120%;
+  margin-left: -10%;
+  display: block;
+}
+
+section.gallery[aria-label="gallery"] {
+  padding-top: 0;
+  padding-bottom: 4px;
+}
+
+section.gallery[aria-label="gallery"] h2 {
+  margin-bottom: 0.3em;
 }
 
 

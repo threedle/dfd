@@ -79,9 +79,7 @@
     <div class="affiliations" aria-label="affiliations" style="font-size: large;">University of Chicago</div>
   </section>
   <section aria-label="teaser" class="teaser">
-    TODO: Add spinning mp4s of teaser pulls
-    </div>
-    </div>
+    <video src="assets/teaser.mp4" autoplay loop muted playsinline onloadeddata="this.playbackRate=0.7"></video>
   </section>
   <section>
     </div>
@@ -90,27 +88,48 @@
     </p>
 
   </section>
-  <section class="gallery" aria-label="gallery">
-    <h2>Gallery</h2>
-    <img class="mediumwidth blcent" src="assets/gallery_full.png"
-      alt="network diagram">
-    <p class="graybox">
-    Handle translation results from the APAP dataset.
-    </p>
-  </section>
   <section>
     <h2>Barycentric Feature Distillation</h2>
     <img class="mediumwidth blcent" src="assets/barycentricdistillation.png"
       alt="network diagram">
     <p class="graybox">
-      <b>Barycentric Feature Distillation.</b> TODO
+      <b>Barycentric Feature Distillation</b> is our novel distillation method which
+      makes use of rasterized geometry to obtain a complete mapping from pixel features to 3D surface points.
+      Past methods distill image features to <span style="color: red;">vertices</span>, whereas we distill
+      to a neural field, and thus can use all <span style="color: green;">rendered surface points</span> as optimization targets.
+      We further observe that high-resolution meshes look visually unchanged even under extreme simplification, and
+      distill using decimated meshes. The feature field PCA insets show that even at 99% simplification, the example
+      shape induces a virtually identical feature field. These design choices enable high-quality feature distillation with guaranteed convergence
+      for meshes of any resolution in a matter of minutes.
     </p>
   </section>
   <section>
     <h2>Visual Symmetry Detection</h2>
     <img class="mediumwidth blcent" src="assets/symmetry.png" alt="symmetry">
     <p class="graybox">
-      <b>Visual Symmetry Detection.</b> TODO
+      <b>Visual Symmetry Detection.</b> Our neural field representation returns visual features for arbitrary 3D points.
+      This enables us to evaluate candidate symmetry planes on points not necessarily on the shape surface (middle insets).
+      After symmetry identification, we can generate a variety of symmetric deformations on corresponding parts,
+      even when the geometries are in different extrinsic poses.
+    </p>
+  </section>
+  <section class="gallery" aria-label="gallery">
+    <h2>Results</h2>
+    <div class="results-carousel">
+      <button class="carousel-arrow carousel-arrow-left" aria-label="Previous">
+        <i class="fas fa-chevron-left"></i>
+      </button>
+      <div class="carousel-viewport">
+        <div class="carousel-track" id="carousel-track">
+        </div>
+      </div>
+      <button class="carousel-arrow carousel-arrow-right" aria-label="Next">
+        <i class="fas fa-chevron-right"></i>
+      </button>
+    </div>
+    <p class="graybox">
+    <b>Results Carousel.</b> We show a selection of results using shapes and prescribed deformations from the APAP and Part-Objaverse Tiny datasets.
+    The results show a combination of translation-based and affine deformations, and the corresponding weight heatmap is shown for single-handle deformations.
     </p>
   </section>
   <section class="gallery">
@@ -135,17 +154,157 @@
         }
       });
     }
+
+    // Results carousel
+    (function () {
+      const QUARTER_HEIGHT_VIDEOS = [];
+      const HALF_HEIGHT_VIDEOS = ["turtle_000.mp4", "turtle_001.mp4", "01b8043112e74366a21256d5e64398fb.mp4"];
+      const VIDEO_SRCS = [
+        "assets/results/01b8043112e74366a21256d5e64398fb.mp4",
+        "assets/results/02e777bdc5114b148963ed3def6ad471.mp4",
+        "assets/results/25a8ae3794594941bb2f7091d608b336.mp4",
+        "assets/results/3b204e1c8fa34183821cf925128f545c.mp4",
+        "assets/results/3eac61535005406885ad708b4eb375e9.mp4",
+        "assets/results/4c387f86d1b4436f86abb37ee060fd7a.mp4",
+        "assets/results/5c3ec179b3fb4fb1b006ff935d5dfb77.mp4",
+        "assets/results/8da95b178bc641d892f296e42c0ed8a0.mp4",
+        "assets/results/9f43d0ac857541e8a3a92e20ba284c44.mp4",
+        "assets/results/Godzilla_000.mp4",
+        "assets/results/ancient_ceramic_animal_001.mp4",
+        "assets/results/ancient_ceramic_animal_004.mp4",
+        "assets/results/ancient_ceramic_animal_006.mp4",
+        "assets/results/astronaut_000.mp4",
+        "assets/results/astronaut_006.mp4",
+        "assets/results/black_boot_001.mp4",
+        "assets/results/black_boot_003.mp4",
+        "assets/results/brachiosaurus_000.mp4",
+        "assets/results/brachiosaurus_002.mp4",
+        "assets/results/cat_doll_000.mp4",
+        "assets/results/charmander_000.mp4",
+        "assets/results/chicken_005.mp4",
+        "assets/results/french_bulldog_000.mp4",
+        "assets/results/french_bulldog_001.mp4",
+        "assets/results/french_bulldog_002.mp4",
+        "assets/results/lantern_001.mp4",
+        "assets/results/luxurious_chair_002.mp4",
+        "assets/results/luxurious_chair_004.mp4",
+        "assets/results/marsh_000.mp4",
+        "assets/results/moai_statue_001.mp4",
+        "assets/results/moai_statue_005.mp4",
+        "assets/results/oni_mask_000.mp4",
+        "assets/results/oni_mask_001.mp4",
+        "assets/results/oni_mask_003.mp4",
+        "assets/results/puppy_001.mp4",
+        "assets/results/puppy_002.mp4",
+        "assets/results/rat_001.mp4",
+        "assets/results/robot_000.mp4",
+        "assets/results/rocket_002.mp4",
+        "assets/results/tree_sparow_001.mp4",
+        "assets/results/tree_sparow_003.mp4",
+        "assets/results/tree_sparow_005.mp4",
+        "assets/results/turtle_000.mp4",
+        "assets/results/white_horse_000.mp4",
+      ];
+
+      for (let i = VIDEO_SRCS.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [VIDEO_SRCS[i], VIDEO_SRCS[j]] = [VIDEO_SRCS[j], VIDEO_SRCS[i]];
+      }
+
+      const track = document.getElementById("carousel-track");
+      if (!track) return;
+
+      function makeVideo(src) {
+        const vid = document.createElement("video");
+        vid.src = src;
+        vid.muted = true;
+        vid.autoplay = true;
+        vid.loop = true;
+        vid.playsInline = true;
+        vid.playbackRate = 0.70;
+        const filename = src.split("/").pop();
+        if (QUARTER_HEIGHT_VIDEOS.includes(filename)) {
+          vid.classList.add("carousel-quarter-height");
+        } else if (HALF_HEIGHT_VIDEOS.includes(filename)) {
+          vid.classList.add("carousel-half-height");
+        }
+        return vid;
+      }
+
+      VIDEO_SRCS.forEach(src => track.appendChild(makeVideo(src)));
+
+      const teaserVid = document.querySelector("section.teaser video");
+      const viewport = document.querySelector(".carousel-viewport");
+      function syncHeight() {
+        if (teaserVid && viewport) {
+          viewport.style.height = teaserVid.getBoundingClientRect().height + "px";
+        }
+      }
+      syncHeight();
+      window.addEventListener("resize", syncHeight);
+      teaserVid?.addEventListener("loadeddata", syncHeight);
+
+      let offset = 0;
+
+      function getMaxOffset() {
+        return Math.max(0, track.scrollWidth - viewport.getBoundingClientRect().width);
+      }
+
+      function applyOffset(animate) {
+        if (!animate) track.classList.add("no-transition");
+        track.style.transform = `translateX(-${offset}px)`;
+        if (!animate) requestAnimationFrame(() => track.classList.remove("no-transition"));
+      }
+
+      function scroll(direction) {
+        const vpWidth = viewport.getBoundingClientRect().width;
+        const step = vpWidth * 0.6;
+        const maxOff = getMaxOffset();
+        const atStart = offset <= 0;
+        const atEnd = offset >= maxOff;
+
+        if (direction > 0 && atEnd) {
+          offset = 0;
+          applyOffset(false);
+          requestAnimationFrame(() => {
+            offset = Math.min(step, maxOff);
+            applyOffset(true);
+          });
+          return;
+        }
+        if (direction < 0 && atStart) {
+          offset = maxOff;
+          applyOffset(false);
+          requestAnimationFrame(() => {
+            offset = Math.max(0, maxOff - step);
+            applyOffset(true);
+          });
+          return;
+        }
+
+        offset = Math.max(0, Math.min(maxOff, offset + direction * step));
+        applyOffset(true);
+      }
+
+      document.querySelector(".carousel-arrow-left").addEventListener("click", () => scroll(-1));
+      document.querySelector(".carousel-arrow-right").addEventListener("click", () => scroll(1));
+    })();
   </script>
+  <section>
+    <h2>Bibtex</h2>
+    <p class="graybox">@InProceedings{DFD_Liu_2026_CVPR,<br>
+      author = {Liu, Richard and Lang, Itai and Hanocka, Rana},<br>
+      title = {Deep Feature Deformation Weights},<br>
+      booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},<br>
+      month = {June},<br>
+      year = {2026},<br>
+    }</p>
+  </section>
   <section>
     <h2>Acknowledgements</h2>
     <p class="graybox"> This project was funded by NSF 2402894, 2304481, the United States - Israel Binational Science Foundation (BSF) 2022363, gifts from Adobe, Snap, Google, and The Bennett Family AI + Science Collaborative Research Program.
     </p>
     <p class="graybox"> Website template made by Nam Anh Dinh.
-    </p>
-  </section>
-  <section>
-    <h2>Bibtex</h2>
-    <p class="graybox">TODO
     </p>
   </section>
 </body>
