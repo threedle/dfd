@@ -105,11 +105,7 @@ def load_mesh(
         verts = torch.from_numpy(np.array(glbmesh.vertices)).float()
         faces = torch.from_numpy(np.array(glbmesh.faces)).long()
 
-        # if hasattr(mesh.visual, "vertex_colors") and mesh.visual.vertex_colors is not None:
-        #     vc = np.array(mesh.visual.vertex_colors)[:, :3].astype(np.float32) / 255.0
-        #     vertex_colors = torch.from_numpy(vc).float()
-        # else:
-        #     vertex_colors = torch.ones_like(verts) * 0.8
+        # TODO: get uv coordinates and texture image if available
     else:
         raise NotImplementedError("Only .obj, .ply, .off, and .glb files are supported")
 
@@ -154,7 +150,7 @@ def barycentric_distillation(
     width: int = 256,
     positional_encoding: bool = False,
     sigma: float = 5.0,
-    normalizemlp: bool = False,
+    normalizemlp: bool = True,
     saveto: str = 'vertices', # vertices or faces
 ):
     """
@@ -748,7 +744,6 @@ if __name__ == "__main__":
     parse.add_argument('--width', type=int, default=256)
     parse.add_argument('--positional_encoding', action="store_true")
     parse.add_argument('--sigma', type=float, default=5.0)
-    parse.add_argument('--normalizemlp', action="store_true")
 
     args = parse.parse_args()
     barycentric_distillation(**vars(args))
