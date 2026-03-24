@@ -89,10 +89,8 @@ if __name__ == "__main__":
     vertices = np.array(v, dtype=np.float32)
     faces = np.array(f, dtype=np.int32)
 
-    from igl import bounding_box
-    bb_vs, bf = bounding_box(vertices)
-    vertices -= np.mean(bb_vs, axis=0)
-    vertices /= np.max(np.linalg.norm(vertices, axis=1))
+    from utils import cube_normalize
+    vertices = cube_normalize(vertices)
 
     # Vertices with homogeneous coordinates
     vertices_hom = torch.from_numpy(np.hstack((vertices, np.ones((vertices.shape[0], 1), dtype=np.float32))))

@@ -75,19 +75,19 @@ def _generate_eye_positions(num_views, viewtype, radius):
             np.cos(elevation)
         ], axis=1)
         return eye_positions, num_views
-    else:
-        # cube
-        num_views_out = 6
-        elevation_deg = np.array([0., 0., 90., -90., 0., 0.])
-        azimuth_deg = np.array([0., 180., 0., 0., 90., -90.])
-        elev_rad = np.radians(elevation_deg)
-        azim_rad = np.radians(azimuth_deg)
-        eye_positions = radius * np.stack([
-            np.cos(elev_rad) * np.cos(azim_rad),
-            np.sin(elev_rad),
-            np.cos(elev_rad) * np.sin(azim_rad),
-        ], axis=1)
-        return eye_positions, num_views_out
+    # else:
+    #     # cube
+    #     num_views_out = 6
+    #     elevation_deg = np.array([0., 0., 90., -90., 0., 0.])
+    #     azimuth_deg = np.array([0., 180., 0., 0., 90., -90.])
+    #     elev_rad = np.radians(elevation_deg)
+    #     azim_rad = np.radians(azimuth_deg)
+    #     eye_positions = radius * np.stack([
+    #         np.cos(elev_rad) * np.cos(azim_rad),
+    #         np.sin(elev_rad),
+    #         np.cos(elev_rad) * np.sin(azim_rad),
+    #     ], axis=1)
+    #     return eye_positions, num_views_out
 
 @torch.no_grad()
 def run_rendering(device, mesh, num_views, H, W,

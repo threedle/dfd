@@ -116,18 +116,18 @@ def generate_cameras(num_views, viewtype, radius):
             np.sin(azimuth) * np.sin(elevation),
             np.cos(elevation)
         ], axis=1)
-    elif viewtype == 'cube':
-        num_views = 6
-        # 6 axis-aligned directions
-        elevation_deg = np.array([0., 0., 90., -90., 0., 0.])
-        azimuth_deg = np.array([0., 180., 0., 0., 90., -90.])
-        elev_rad = np.radians(elevation_deg)
-        azim_rad = np.radians(azimuth_deg)
-        eye_positions = radius * np.stack([
-            np.cos(elev_rad) * np.cos(azim_rad),
-            np.sin(elev_rad),
-            np.cos(elev_rad) * np.sin(azim_rad),
-        ], axis=1)
+    # elif viewtype == 'cube':
+    #     num_views = 6
+    #     # 6 axis-aligned directions
+    #     elevation_deg = np.array([0., 0., 90., -90., 0., 0.])
+    #     azimuth_deg = np.array([0., 180., 0., 0., 90., -90.])
+    #     elev_rad = np.radians(elevation_deg)
+    #     azim_rad = np.radians(azimuth_deg)
+    #     eye_positions = radius * np.stack([
+    #         np.cos(elev_rad) * np.cos(azim_rad),
+    #         np.sin(elev_rad),
+    #         np.cos(elev_rad) * np.sin(azim_rad),
+    #     ], axis=1)
 
     target = np.array([0., 0., 0.])
     up = np.array([0., 1., 0.])
@@ -213,7 +213,7 @@ def run_rendering(glctx, device, vertices, faces, num_views, H, W,
         vertex_normals: (V, 3) float tensor or None
         use_normal_map: whether to produce normal map renderings
         radius: camera distance
-        viewtype: 'default', 'fib', 'cube'
+        viewtype: 'default', 'fib'
         texture_data: optional dict with 'uv_coords', 'uv_faces', 'texture_image' for UV-textured meshes
 
     Returns:

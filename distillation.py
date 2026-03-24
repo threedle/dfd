@@ -721,13 +721,13 @@ if __name__ == "__main__":
     parse.add_argument("-W", "--imgw", type=int, default=512)
 
     parse.add_argument("--nviews", type=int, default=24, help="total views to render (should be multiple of 3 for default viewtype)")
-    parse.add_argument("--viewtype", type=str, choices={'default', 'fib', 'cube'}, default='default', help="default view sampling or fibonacci or cube")
+    parse.add_argument("--viewtype", type=str, choices={'default', 'fib'}, default='default', help="default view sampling or fibonacci")
     parse.add_argument('--flattenviews', action="store_true", help='flatten the view features')
     parse.add_argument("--batchsize", type=int, default=2, help="views to batch OR pixels to batch during feature optimization")
     parse.add_argument("--viewbatchsize", type=int, default=16, help="number of views to batch for rendering")
     parse.add_argument("--featurebatchsize", type=int, default=2, help="number of views to batch for feature extraction")
     parse.add_argument("--lr", type=float, default=1e-3)
-    parse.add_argument("--iters", type=int, default=15)
+    parse.add_argument("--iters", type=int, default=25)
 
     ### Gaussian blurring
     parse.add_argument("--noiseradius", type=float, default=0.05, help="maximum radius for sampling outside of the vertex")
@@ -742,8 +742,8 @@ if __name__ == "__main__":
     ### MLP parameters
     parse.add_argument('--nlayers', type=int, default=4)
     parse.add_argument('--width', type=int, default=256)
-    parse.add_argument('--positional_encoding', action="store_true")
-    parse.add_argument('--sigma', type=float, default=5.0)
+    parse.add_argument('--positional_encoding', action="store_true", help="using fourier features for positional encoding")
+    parse.add_argument('--sigma', type=float, default=5.0, help="sigma for fourier features")
 
     args = parse.parse_args()
     barycentric_distillation(**vars(args))
