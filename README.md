@@ -117,10 +117,11 @@ python interactive_affine.py assets/crab/crab.glb --weightsdir outputs/crab/fina
 ## Citation
 
 ```bibtex
-@article{liu2026dfd,
-  title={Deep Feature Deformation Weights},
-  author={Liu, Richard and Lang, Itai and Hanocka, Rana},
-  journal={arXiv preprint arXiv:2601.12527},
-  year={2026}
-}
+@InProceedings{DFD_Liu_2026_CVPR,
+      author = {Liu, Richard and Lang, Itai and Hanocka, Rana},
+      title = {Deep Feature Deformation Weights},
+      booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+      month = {June},
+      year = {2026}
+    }
 ```
