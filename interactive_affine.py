@@ -115,7 +115,7 @@ if __name__ == "__main__":
         with open(argsdir, 'r') as f:
             argsdict = json.load(f)
         argsdict = argparse.Namespace(**argsdict)
-        featuremlp = FeatureMLP(argsdict.depth, argsdict.width, out_dim=argsdict.out_dim, positional_encoding=argsdict.positional_encoding,
+        featuremlp = FeatureMLP(argsdict.nlayers, argsdict.width, out_dim=argsdict.out_dim, positional_encoding=argsdict.positional_encoding,
                     sigma=argsdict.sigma)
 
         featuremlp.load_state_dict(torch.load(args.weightsdir, map_location='cpu', weights_only=True))
@@ -246,7 +246,6 @@ if __name__ == "__main__":
     mode = "iterative" # Can be iterative or global
     modes = ['iterative']
     control_points = {}
-    currentcp = None
     cp_def_cache = {} # Dictionary of deformation values per control point
     showinfluence = True
     geoweights = []
@@ -298,7 +297,7 @@ if __name__ == "__main__":
         # inside any method), you will need to use the `global` keyword instead of `nonlocal`.
 
         global args, ps_mesh, ps_selection, vertices, faces, vertex_index, vertices_hom, vertices_def_hom
-        global currentcp, geoweights, precompute_vertices, iterative_control_points
+        global geoweights, precompute_vertices, iterative_control_points
         global vertices_def_cache, vertices_def, last_vertices_def, vertices, cp_def_cache
         global symmetries, symmetry_labels, symmetry_groups, symmetry, symmetry_axis, show_symmetry_plane
         global symmetry_group0, symmetry_group1
@@ -576,7 +575,7 @@ if __name__ == "__main__":
                     vertex_index = index
 
                     if len(iterative_control_points) > 0 and vertex_index not in iterative_control_points:
-                        ps_selection = ps.register_point_cloud("selection", np.concatenate([vertices_def[iterative_control_points], vertices_def[[vertex_index]]], axis=0), radius=pointradius, enabled=True)
+                        ps_selection = ps.register_point_cloud("selection", vertices_def[iterative_control_points + [vertex_index]], radius=pointradius, enabled=True)
                         ps_selection.set_radius(pointradius, relative=False)
                         select_idx = -1
                     elif len(iterative_control_points) == 0:
@@ -654,7 +653,8 @@ if __name__ == "__main__":
                         vertices_def_cache.append(deformation_state)
 
                         iterative_control_points.append(deformation_state[0])
-                        ps_selection = ps.register_point_cloud("selection", vertices_def[iterative_control_points], radius=pointradius, enabled=True)
+
+                        ps_selection = ps.register_point_cloud("selection", vertices_def[iterative_control_points + [vertex_index]], radius=pointradius, enabled=True)
                         ps_selection.set_radius(pointradius, relative=False)
 
                     # Initialize new state
@@ -842,7 +842,7 @@ if __name__ == "__main__":
 
         if (x_change or y_change or z_change or x_rotation_change or y_rotation_change or z_rotation_change \
             or x_scale_change or y_scale_change or z_scale_change) and \
-                (vertex_index is not None or currentcp is not None):
+                (vertex_index is not None):
 
             # Build the affine transformation matrix
             translation = torch.tensor([x_translation, y_translation, z_translation])
@@ -866,12 +866,8 @@ if __name__ == "__main__":
 
             # NOTE: To apply symmetry to the rotation, we reverse the angle corresponding to the symmetry axis
             if symmetry_axis is not None and len(symmetries) > 0:
-                if vertex_index is None:
-                    select = currentcp
-                else:
-                    select = vertex_index
 
-                if vertices[select, symmetry_axis] >= 0:
+                if vertices[vertex_index, symmetry_axis] >= 0:
                     reflected_group = symmetry_group1
                 else:
                     reflected_group = symmetry_group0
