@@ -101,8 +101,8 @@ High resolution meshes (>100k vertices) should be first downsampled before rende
 
 <table>
 <tr>
-<td align="center"><video src="assets/bunny.mp4" width="100%"></video>Mesh with topological defects.</td>
-<td align="center"><video src="assets/spot.mp4" width="100%"></video>Symmetry, feature anchors, locality weighting.</td>
+<td align="center"><video src="https://github.com/user-attachments/assets/1aa412b5-566d-42e5-8b77-c9eed976e91a" width="100%"></video>Mesh with topological defects.</td>
+<td align="center"><video src="https://github.com/user-attachments/assets/ff1c21c2-1b88-4c46-b633-26083ca4e4e6" width="100%"></video>Symmetry, feature anchors, locality weighting.</td>
 </tr>
 </table>
 
