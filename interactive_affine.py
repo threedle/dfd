@@ -24,7 +24,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('objdir', type=str, help='path to obj file')
-    parser.add_argument('--weightsdir', type=str, help='path to saved MLP weights (image features distilled)')
+    parser.add_argument('--weightsdir', type=str, help='path to saved MLP weights (image features distilled)', default=None)
     parser.add_argument('--featurepath', type=str, help='path to saved vertex features (if not using MLP). Symmetry evaluation will NOT be available.', default=None)
     parser.add_argument('--argsdir', type=str, help='path to parameters json. defaults to weightsdir.replace(".pth", ".json")', default=None)
     parser.add_argument('--savedir', type=str, help='directory to save exports to', default=None)
@@ -33,10 +33,19 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    featurepath = args.featurepath
+    weightsdir = args.weightsdir
+    if featurepath is None and weightsdir is None:
+        raise ValueError("Either --featurepath or --weightsdir must be provided")
+
     from pathlib import Path
     savedir = args.savedir
     if savedir is None:
-        savedir = os.path.join(os.path.dirname(args.weightsdir), "exports")
+        if weightsdir is not None:
+            savedir = os.path.join(os.path.dirname(weightsdir), "exports")
+        else:
+            savedir = os.path.join(os.path.dirname(featurepath), "exports")
+
     Path(savedir).mkdir(parents=True, exist_ok=True)
 
     import igl
@@ -94,11 +103,6 @@ if __name__ == "__main__":
 
     # Vertices with homogeneous coordinates
     vertices_hom = torch.from_numpy(np.hstack((vertices, np.ones((vertices.shape[0], 1), dtype=np.float32))))
-
-    featurepath = args.featurepath
-    weightsdir = args.weightsdir
-    if featurepath is None and weightsdir is None:
-        raise ValueError("Either --featurepath or --weightsdir must be provided")
 
     if weightsdir is None:
         featuremlp = None
@@ -758,6 +762,10 @@ if __name__ == "__main__":
             x_scale, y_scale, z_scale = 1.0, 1.0, 1.0
 
             ps_mesh.remove_quantity("influence")
+
+            if textureimg is not None and fuv is not None:
+                # ps_mesh.enable_quantity("texture")
+                ps_mesh.add_color_quantity("texture", textureimg, defined_on='texture', enabled=True, param_name='uv')
 
         # Latent anchoring
         anchorchange, add_anchors = psim.Checkbox("Add anchors", add_anchors)
