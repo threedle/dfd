@@ -43,7 +43,7 @@ if __name__ == "__main__":
     textureimg = None
     fuv = None
     if args.objdir.endswith(".obj"):
-        v, vt, n, f, ftc, _ = igl.read_obj(args.objdir)
+        v, vt, n, f, ftc, _ = igl.readOBJ(args.objdir)
         if len(vt) == 0:
             fuv = None
         else:
