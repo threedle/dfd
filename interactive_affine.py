@@ -28,7 +28,7 @@ if __name__ == "__main__":
     parser.add_argument('--featurepath', type=str, help='path to saved vertex features (if not using MLP). Symmetry evaluation will NOT be available.', default=None)
     parser.add_argument('--argsdir', type=str, help='path to parameters json. defaults to weightsdir.replace(".pth", ".json")', default=None)
     parser.add_argument('--savedir', type=str, help='directory to save exports to', default=None)
-    parser.add_argument('--texturepath', type=str, help='path to texture image', default=None)
+    parser.add_argument('--texturedir', type=str, help='path to texture image', default=None)
     parser.add_argument('--maxv', type=int, default=30000, help="meshes with # v over this don't precompute weights")
 
     args = parser.parse_args()
@@ -923,10 +923,10 @@ if __name__ == "__main__":
     ps_mesh = ps.register_surface_mesh("mesh", vertices, faces, edge_width=None, color=defaultcolor)
     ps_mesh.set_selection_mode("vertices_only")
 
-    if args.texturepath is not None:
+    if args.texturedir is not None:
         # Load texture
         from PIL import Image
-        textureimg = Image.open(args.texturepath).convert('RGB')
+        textureimg = Image.open(args.texturedir).convert('RGB')
         textureimg = np.array(textureimg)
         textureimg = textureimg / 255.0
 
