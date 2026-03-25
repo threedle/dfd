@@ -1,0 +1,28 @@
+# PyTorch — install with the matching CUDA index (see README)
+torch==2.9.1
+torchvision==0.24.1
+xformers==0.0.33.post2
+
+# Diffusion / vision-transformer models
+diffusers==0.32.2
+accelerate
+transformers
+safetensors
+huggingface-hub
+
+# Mesh I/O and rendering
+trimesh
+libigl
+scikit-robot-pyrender
+
+# Mesh simplification
+fast-simplification
+
+# Visualization and ML utilities
+polyscope
+scikit-learn
+matplotlib
+tqdm
+numpy
+Pillow
+opencv-python

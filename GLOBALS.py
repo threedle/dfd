@@ -34,4 +34,5 @@ patch_sizes = {
     'dinov3_vit7b16': 16,
 }
 
+# NOTE: Replace below with your path to the SAM2 checkpoint
 SAM2_CHECKPOINT = "/net/projects/ranalab/guanzhi/DFD/sam2_repo/checkpoints/sam2.1_hiera_large.pt"

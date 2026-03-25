@@ -222,11 +222,7 @@ def get_pixel_features_diff3f(
     ### Batch all the renders together ###
     from diffusion import run_diffusion_batched
 
-    tot_aligned_features = torch.zeros(
-            (len(batched_renderings), H, W, 2048), device="cpu",
-            dtype=torch.float16,
-            )
-
+    tot_aligned_features = []
     for i in tqdm(range(0, len(batched_renderings), batch_size)):
         predifftime = time()
 
@@ -309,9 +305,8 @@ def get_pixel_features_diff3f(
         if normalize:
             aligned_features *= 1/np.sqrt(2) # This ensures unit norm
 
-        tot_aligned_features[i:i+batch_size] = aligned_features
+        tot_aligned_features.append(aligned_features.cpu())
 
-        # tot_aligned_features.append(aligned_features.contiguous())
         if debug:
             cat_time = time()
             t2 = (cat_time - grid_time) / 60
@@ -586,8 +581,7 @@ def get_pixel_features_sam(device, sam_model, imgs, normalize=True,
 
     from tqdm import tqdm
     featuredim = 256
-    view_features = torch.zeros((processed_renderings.shape[0], oldh, oldw, featuredim), device='cpu',
-                                dtype=torch.float16 if half else torch.float32)
+    view_features = []
 
     print(f"Getting SAM features for {processed_renderings.shape} images ...")
     t0 = time()
@@ -606,7 +600,7 @@ def get_pixel_features_sam(device, sam_model, imgs, normalize=True,
             if normalize:
                 batch_features = torch.nn.functional.normalize(batch_features, dim=1)
 
-        view_features[i:i+batch_size] = batch_features.permute(0, 2, 3, 1).cpu()
+        view_features.append(batch_features.permute(0, 2, 3, 1).cpu())
 
     if debug:
         print(f"Total time taken for SAM features: {time() - t0:.2f} seconds")
@@ -620,13 +614,10 @@ def get_pixel_features_clip(device, clip_model, imgs, normalize=True,
     imgs = imgs[..., :3].permute(0, 3, 1, 2)
 
     from tqdm import tqdm
+    import math
 
     print(f"Getting CLIP features for {imgs.shape} images ...")
-    ndim = 1024 # Patch feature dimension
-    npatches = 16 # VIT CLIP always resizes to 224x224 with patch size 14
-
-    view_features = torch.zeros((imgs.shape[0], imgs.shape[2], imgs.shape[3], ndim), device='cpu',
-                            dtype=torch.float16 if half else torch.float32)
+    view_features = []
 
     t0 = time()
     for i in tqdm(range(0, imgs.shape[0], batch_size)):
@@ -635,21 +626,24 @@ def get_pixel_features_clip(device, clip_model, imgs, normalize=True,
 
             # Aggregate the features
             # NOTE: FC features don't matter
-            batch_features = torch.zeros((batch_fc_features.shape[0], ndim, imgs.shape[2], imgs.shape[3]),
-                                         dtype=torch.float16 if half else torch.float32, device=device)
+            batch_features = None
             for j, weight in enumerate(clip_conv_layer_weights):
                 if weight > 0:
                     # NOTE: first feature is the CLS token
-                    batch_conv_feature = batch_conv_features[j][:, 1:, :].reshape(batch_fc_features.shape[0], npatches, npatches, ndim)
+                    batch_conv_feature = batch_conv_features[j][:, 1:, :]
+                    batch_conv_feature = batch_conv_feature.reshape(len(batch_conv_feature), int(math.sqrt(batch_conv_feature.shape[1])), int(math.sqrt(batch_conv_feature.shape[1])), batch_conv_feature.shape[-1])
                     batch_conv_feature = torch.nn.functional.interpolate(batch_conv_feature.permute(0, 3, 1, 2), (imgs.shape[2], imgs.shape[3]),
                                                                          mode="bilinear", antialias=True)
-                    batch_features += batch_conv_feature * weight
+                    if batch_features is None:
+                        batch_features = batch_conv_feature * weight
+                    else:
+                        batch_features = batch_features + batch_conv_feature * weight
 
             # Upsample
             if normalize:
                 batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
 
-        view_features[i:i+batch_size] = batch_features.permute(0, 2, 3, 1).cpu()
+        view_features.append(batch_features.permute(0, 2, 3, 1).cpu())
 
     if debug:
         print(f"Total time taken for CLIP features: {time() - t0:.2f} seconds")
@@ -666,13 +660,7 @@ def get_pixel_features_sam2(device, sam2_model, imgs, normalize=True,
     np_renderings = (imgs.cpu().numpy() * 255).astype(np.uint8)[..., :3]
     np_renderings = [np_renderings[i] for i in range(np_renderings.shape[0])]
 
-    batch_size = 15
-    ndim = 256
-    if concat_hr:
-        ndim = 256 + 32*2
-    view_features = torch.zeros((len(imgs), imgs.shape[1], imgs.shape[2], ndim), device='cpu',
-                    dtype=torch.float16 if half else torch.float32)
-    # TODO: try different options for accumulating the features
+    view_features = []
     t0 = time()
     for i in tqdm(range(0, len(np_renderings), batch_size)):
         batch = np_renderings[i:i+batch_size]
@@ -699,7 +687,7 @@ def get_pixel_features_sam2(device, sam2_model, imgs, normalize=True,
         if half:
             image_embed = image_embed.half()
 
-        view_features[i:i+batch_size] = image_embed.permute(0, 2, 3, 1).cpu()
+        view_features.append(image_embed.permute(0, 2, 3, 1).cpu())
 
     if debug:
         print(f"Total time taken for SAM2 features: {time() - t0:.2f} seconds")

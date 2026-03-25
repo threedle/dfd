@@ -52,15 +52,14 @@ def show_anns(anns, borders=True):
 def main(img: np.ndarray, patch_size=16):
     from sam2.build_sam import build_sam2
     from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
-
-    checkpoint = "/net/projects/ranalab/guanzhi/sam2/checkpoints/sam2.1_hiera_large.pt"
+    from GLOBALS import SAM2_CHECKPOINT
     model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     sam = build_sam2(
         model_cfg,
-        checkpoint,
+        SAM2_CHECKPOINT,
         device=device,
         apply_postprocessing=False
     )

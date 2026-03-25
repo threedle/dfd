@@ -104,7 +104,7 @@ High resolution meshes (>1m vertices) should be first downsampled before renderi
 
 `interactive_affine.py` launches a [Polyscope](https://polyscope.run/)-based GUI for real-time handle-based mesh deformation using the distilled feature weights.
 
-**Click any vertex** to place a handle and visualize its influence weights over the surface. Then use the translation, rotation, and scale sliders to deform the mesh.
+Click anywhere on the mesh to place a handle and visualize its influence weights over the surface. Then use the translation, rotation, and scale sliders to deform the mesh.
 
 ### Capabilities
 

@@ -231,7 +231,7 @@ def simplify_from_gltf_file(gltfpath, reduction, savepath):
 
     t0 = time.time()
     subprocess.run(["npx", "@gltf-transform/cli", "weld", gltfpath, savepath])
-    subprocess.run(["npx", "@gltf-transform/cli", "simplify", savepath, savepath, "--reduction", str(reduction), "--error", "1"])
+    subprocess.run(["npx", "@gltf-transform/cli", "simplify", savepath, savepath, "--ratio", str(reduction), "--error", "1"])
     print(f"Mesh saved to {savepath}")
     t2 = (time.time() - t0) / 60
     print(f"Time taken: {t2} minutes")

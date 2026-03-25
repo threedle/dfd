@@ -104,8 +104,6 @@ def load_mesh(
         glbmesh.vertices = cube_normalize(glbmesh.vertices)
         verts = torch.from_numpy(np.array(glbmesh.vertices)).float()
         faces = torch.from_numpy(np.array(glbmesh.faces)).long()
-
-        # TODO: get uv coordinates and texture image if available
     else:
         raise NotImplementedError("Only .obj, .ply, .off, and .glb files are supported")
 
@@ -118,7 +116,6 @@ def barycentric_distillation(
     *,
     meshpath: str,
     savedir: str,
-    description=None,
     texturedir: str | None = None,
     viewradius: float = 1,
     overwrite: bool = False,
@@ -161,7 +158,7 @@ def barycentric_distillation(
     - Load and normalize a mesh (supports ``.obj``, ``.ply``, ``.off``, ``.glb``).
     - Render the mesh from multiple views and compute per-pixel 3D positions (barycentric
       coordinates/triangle correspondence) plus a visibility mask.
-    - Extract dense per-pixel features with the selected image model (e.g. Diff3F/DINO/CLIP/SAM/RADIO).
+    - Extract dense per-pixel features with the selected image model (e.g. DINO/CLIP/SAM/RADIO).
     - Fit an MLP that maps 3D positions to the corresponding image feature vectors.
     - Predict a feature for each face using triangle centroids and save the result.
     - Optionally produce PCA-colored screenshots using Polyscope.
@@ -172,10 +169,6 @@ def barycentric_distillation(
         Path to the input mesh.
     savedir:
         Output directory. The function creates it if missing and writes checkpoints and outputs here.
-    description:
-        Text prompt for models that need it (e.g. ``diff3f``). This matches the CLI behavior:
-        typically a list of tokens from argparse (``nargs="+"``). When empty and ``model=="diff3f"``,
-        the mesh basename is used.
     texturedir:
         Optional texture image path used for textured OBJ rendering (UVs).
     viewradius, nviews, viewtype, viewbatchsize, imgh, imgw:
@@ -217,10 +210,6 @@ def barycentric_distillation(
     """
     os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 
-    # Normalize/compat: argparse uses [] for unset description; avoid mutable default in signature.
-    if description is None:
-        description = []
-
     device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
     torch.cuda.set_device(device)
     torch.backends.cudnn.benchmark = True
@@ -245,7 +234,7 @@ def barycentric_distillation(
 
         if meshpath.endswith(".glb"):
             from simplify_mesh import simplify_from_gltf_file
-            savepath = str(os.path.basename(meshpath))[:-3] + f"_simplified{reduction}.glb"
+            savepath = os.path.join(cachedir, os.path.basename(meshpath).split(".")[0] + f"_simplified{reduction}.glb")
             simplify_from_gltf_file(meshpath, reduction, savepath)
             meshpath = savepath
         else:
@@ -276,14 +265,6 @@ def barycentric_distillation(
     diffusers.logging.set_verbosity_error()
 
     meshname = os.path.basename(meshpath).split(".")[0]
-    if len(description) > 0:
-        description = " ".join(description)
-    else:
-        description = ""
-
-    if len(description) == 0 and model == "diff3f":
-        print(f"No description provided. Using meshname as description for diff3f distillation: {meshname}")
-        description = meshname
 
     # ==================== Mesh Loading ====================
     glbmesh, mesh_vertices, mesh_faces, vertex_colors, vertex_normals, texture_data = load_mesh(
@@ -338,8 +319,7 @@ def barycentric_distillation(
     # ==================== MLP Training Setup ====================
     H = imgh
     W = imgw
-    use_normal_map = model == "diff3f"
-
+    use_normal_map = False
     t0 = time.time()
 
     if not os.path.exists(os.path.join(savedir, f"{meshname}.pt")) or not os.path.exists(os.path.join(savedir, f"final_encoder.pth")):
@@ -454,7 +434,6 @@ def barycentric_distillation(
             if extractor.needs_normal_map:
                 feat_kwargs['normal_renderings'] = normal_batched_renderings
                 feat_kwargs['depth'] = depth
-                feat_kwargs['prompt'] = description
 
             if model == "sam2":
                 feat_kwargs['concat_hr'] = sam2_hr
@@ -528,7 +507,6 @@ def barycentric_distillation(
             loss_list = []
 
         optim = torch.optim.Adam(encoder.parameters(), lr=lr)
-        scaler = torch.amp.GradScaler('cuda')
 
         from tqdm import tqdm
 
@@ -566,14 +544,12 @@ def barycentric_distillation(
                     positions = torch.cat([positions.unsqueeze(1), noisy_positions], dim=1).reshape(-1, 3)
                     gtfeatures = gtfeatures.repeat_interleave(noisen + 1, dim=0)
 
-                with torch.amp.autocast('cuda'):
-                    pred_features = encoder(positions)
-                    batch_loss = torch.nn.MSELoss(reduction='sum')(pred_features, gtfeatures.float())
+                pred_features = encoder(positions)
+                batch_loss = torch.nn.MSELoss(reduction='sum')(pred_features, gtfeatures.float())
 
                 optim.zero_grad(set_to_none=True)
-                scaler.scale(batch_loss).backward()
-                scaler.step(optim)
-                scaler.update()
+                batch_loss.backward()
+                optim.step()
 
                 totloss += batch_loss.item()
 
@@ -696,7 +672,6 @@ if __name__ == "__main__":
     parse = argparse.ArgumentParser()
     parse.add_argument("meshpath", type=str)
     parse.add_argument("savedir", type=str)
-    parse.add_argument('-d', "--description", nargs="+", type=str, default=[], help="text description for diff3f encoding")
     parse.add_argument("--texturedir", type=str, default=None)
     parse.add_argument("--viewradius", type=float, default=2.8)
     parse.add_argument("--saveto", type=str, choices={'vertices', 'faces'}, default='vertices', help="where to sample the features from")
@@ -709,7 +684,7 @@ if __name__ == "__main__":
     parse.add_argument("--reduction", type=float, default=0, help="What percentage of edges to collapse.")
 
     ### Image model parameters
-    parse.add_argument("--model", choices={"dino2", "dino3", "diff3f", 'clip', 'sam', 'sam2', 'radio'}, type=str, default="dino2")
+    parse.add_argument("--model", choices={"dino2", "dino3", 'clip', 'sam', 'sam2', 'radio'}, type=str, default="dino2")
     parse.add_argument("--arch", type=str, default=None, help="specific architecture name for the model")
     parse.add_argument("--checkpoint", type=str, default=None, help="path to model checkpoint weights if stored locally")
     parse.add_argument("--repodir", type=str, default=None, help="path to repository source for the model if stored locally")
@@ -727,7 +702,7 @@ if __name__ == "__main__":
     parse.add_argument("--viewbatchsize", type=int, default=16, help="number of views to batch for rendering")
     parse.add_argument("--featurebatchsize", type=int, default=2, help="number of views to batch for feature extraction")
     parse.add_argument("--lr", type=float, default=1e-3)
-    parse.add_argument("--iters", type=int, default=25)
+    parse.add_argument("--iters", type=int, default=10)
 
     ### Gaussian blurring
     parse.add_argument("--noiseradius", type=float, default=0.05, help="maximum radius for sampling outside of the vertex")

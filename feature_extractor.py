@@ -56,79 +56,6 @@ class FeatureExtractor:
         """Whether SAM-based feature refinement is applicable to this model."""
         return False
 
-
-class Diff3FExtractor(FeatureExtractor):
-    """Stable Diffusion + DINOv2 feature extraction."""
-
-    def init_model(self, arch=None):
-        # Idempotent init: avoid re-loading large weights if called twice.
-        if getattr(self, "pipe", None) is not None and getattr(self, "dino_model", None) is not None:
-            return
-
-        from diffusion import init_pipe
-        from diffusion import DIFFUSION_MODEL_ID
-        from dino import init_dino
-        self.pipe = init_pipe(self.device)
-        arch = self._kwargs["arch"]
-        if arch is None:
-            print("Warning: arch is not provided for diff3f. Using default arch: dinov2_vitg14_reg")
-            arch = "dinov2_vitg14_reg"
-        self.dino_model = init_dino(self.device, archtype=arch)
-        self.model_name = f"{DIFFUSION_MODEL_ID}+{arch}"
-
-    @property
-    def needs_normal_map(self):
-        return True
-
-    def get_pixel_features(self, renderings, H, W, *,
-                           normal_renderings=None, depth=None,
-                           prompt="", batch_size=10, normalize=True,
-                           debug=False, **kwargs):
-        from pixel_features import get_pixel_features_diff3f
-
-        renderings = renderings.cpu()
-        if normal_renderings is not None:
-            normal_renderings = normal_renderings.cpu()
-        if depth is not None:
-            depth = depth.cpu()
-
-        view_features = get_pixel_features_diff3f(
-            self.device,
-            self.pipe,
-            self.dino_model,
-            prompt=prompt,
-            renderbatch=(renderings, normal_renderings, depth),
-            H=H, W=W,
-            use_normal_map=True,
-            num_images_per_prompt=1,
-            normalize=normalize,
-            debug=debug,
-            batch_size=batch_size,
-        )
-        return view_features
-
-    def cleanup(self):
-        pipe = getattr(self, "pipe", None)
-        if pipe is not None:
-            try:
-                self.pipe = pipe.to("cpu")
-            except Exception:
-                pass
-            del self.pipe
-            self.pipe = None
-
-        dino_model = getattr(self, "dino_model", None)
-        if dino_model is not None:
-            try:
-                self.dino_model = dino_model.to("cpu")
-            except Exception:
-                pass
-            del self.dino_model
-            self.dino_model = None
-
-        super().cleanup()
-
-
 class DINOv2Extractor(FeatureExtractor):
     """DINOv2 feature extraction."""
 
@@ -326,8 +253,8 @@ class SAM2Extractor(FeatureExtractor):
 
         model_cfg = self._kwargs["model_cfg"]
         if model_cfg is None:
-            print("Warning: model_cfg is not provided for sam2. Using default model_cfg: /net/projects/ranalab/guanzhi/DFD/sam2_repo/configs/sam2.1/sam2.1_hiera_l.yaml")
-            model_cfg = os.path.join(repodir, "configs/sam2.1/sam2.1_hiera_l.yaml")
+            print("Warning: model_cfg is not provided for sam2. Using default local model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml")
+            model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
         self.model = SAM2ImagePredictor(build_sam2(model_cfg, checkpoint))
 
     def get_pixel_features(self, renderings, H, W, *,
@@ -374,7 +301,7 @@ class CLIPExtractor(FeatureExtractor):
         self.model_name = f"clip_{arch}"
 
     def get_pixel_features(self, renderings, H, W, *,
-                           batch_size=20, normalize=True, half=True,
+                           batch_size=20, normalize=True, half=False,
                            debug=False, **kwargs):
         from pixel_features import get_pixel_features_clip
         return get_pixel_features_clip(
@@ -392,7 +319,6 @@ class CLIPExtractor(FeatureExtractor):
 # --- Registry and factory ---
 
 EXTRACTORS = {
-    "diff3f": Diff3FExtractor,
     "dino2": DINOv2Extractor,
     "dino3": DINOv3Extractor,
     "radio": RADIOExtractor,
@@ -407,7 +333,7 @@ def create_extractor(model_name, device, arch=None, checkpoint=None, repodir=Non
     Factory function to create and initialize a FeatureExtractor.
 
     Args:
-        model_name: one of 'diff3f', 'dino2', 'dino3', 'radio', 'sam', 'sam2', 'clip'
+        model_name: one of 'dino2', 'dino3', 'radio', 'sam', 'sam2', 'clip'
         device: torch device
         arch: architecture name
         checkpoint: checkpoint path
