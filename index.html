@@ -41,6 +41,115 @@
     }
   </style>
 
+  <style>
+    #deformation-app {
+      display: flex;
+      gap: 16px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    #dfd-canvas-container {
+      flex: 0 0 65%;
+      position: relative;
+      border-radius: var(--bordrad);
+      overflow: hidden;
+      background: var(--accentbg);
+      min-height: 400px;
+    }
+    #dfd-canvas {
+      width: 100%;
+      height: 500px;
+      display: block;
+      cursor: crosshair;
+    }
+    #dfd-overlay {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      color: var(--accent);
+      pointer-events: none;
+      font-family: Manrope, sans-serif;
+      font-size: 1rem;
+    }
+    #dfd-sidebar {
+      flex: 0 0 calc(35% - 16px);
+      background: var(--notwhite);
+      border-radius: var(--bordrad);
+      box-shadow: var(--dropshadow);
+      padding: 14px;
+      overflow-y: auto;
+      max-height: 520px;
+      box-sizing: border-box;
+    }
+    #dfd-status {
+      font-size: 0.85rem;
+      color: var(--fore);
+      margin-bottom: 10px;
+      min-height: 1.2em;
+    }
+    .dfd-group-title {
+      font-family: Manrope, sans-serif;
+      font-size: 0.85rem;
+      color: var(--accent);
+      font-weight: 700;
+      margin: 12px 0 4px;
+    }
+    .dfd-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 5px;
+      font-size: 0.8rem;
+      color: var(--fore);
+    }
+    .dfd-slider-row label { min-width: 1.2ch; }
+    .dfd-slider-row input[type=range] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+    .dfd-val {
+      min-width: 3.5ch;
+      text-align: right;
+      color: var(--accentlight);
+      font-size: 0.78rem;
+      font-variant-numeric: tabular-nums;
+    }
+    #dfd-sym, #dfd-reset {
+      width: 100%;
+      margin-top: 8px;
+      padding: 7px;
+      border: none;
+      border-radius: var(--bordrad);
+      cursor: pointer;
+      font-family: Manrope, sans-serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    #dfd-sym {
+      background: var(--accentbg);
+      color: var(--accent);
+      border: 1.5px solid var(--accent);
+    }
+    #dfd-sym[aria-pressed="true"] {
+      background: var(--accent);
+      color: #f2f7fc;
+    }
+    #dfd-sym:hover { background: var(--accentbg-shaded); }
+    #dfd-sym[aria-pressed="true"]:hover { background: var(--accentlight); }
+    #dfd-reset {
+      background: var(--accent);
+      color: #f2f7fc;
+      margin-top: 6px;
+    }
+    #dfd-reset:hover { background: var(--accentlight); }
+    @media (max-width: 660px) {
+      #deformation-app { flex-direction: column; }
+      #dfd-canvas-container, #dfd-sidebar { flex: 0 0 auto; width: 100%; }
+      #dfd-canvas { height: 300px; }
+      #dfd-sidebar { max-height: 300px; }
+    }
+  </style>
+
   <meta name="description" content="Deep Feature Deformation Weights">
   <meta name="keywords" content="3D feature distillation, mesh deformation, neural fields, 2D foundation models">
 
@@ -64,7 +173,7 @@
     <nav>
       <a href="https://cvpr.thecvf.com/" class="venue" aria-label="venue"><i class="icon fas fa-map-marker-alt" aria-hidden="true"></i>CVPR
         2026</a>
-      <a href="https://arxiv.org/abs/2601.12527" aria-label="paper pdf">
+      <a href="assets/dfd__CVPR_final.pdf" aria-label="paper pdf">
         <i class="icon fas fa-file-pdf"></i>Paper
       </a>
       <a href="https://arxiv.org/abs/2601.12527"><i class="icon ai ai-arxiv"></i>arXiv</a>
@@ -132,10 +241,34 @@
     The results show a combination of translation-based and affine deformations, and the corresponding weight heatmap is shown for single-handle deformations.
     </p>
   </section>
-  <section class="gallery">
+  <section class="gallery" id="deformation-section">
     <h2>Deformation Application</h2>
-    TODO: three.js interactive deformation application. just need to have the feature tensor pre-loaded and to implement click and drag framework.
-    TODO: eventually we may want to have the ability to let user upload their own meshes, distill on the website, and then deform them interactively.
+    <div id="deformation-app">
+      <div id="dfd-canvas-container">
+        <canvas id="dfd-canvas"></canvas>
+        <div id="dfd-overlay">Loading...</div>
+      </div>
+      <div id="dfd-sidebar">
+        <div id="dfd-status">No vertex selected.</div>
+        <div class="dfd-group-title">Translation</div>
+        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-tx" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-tx-val">0.00</span></div>
+        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-ty" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-ty-val">0.00</span></div>
+        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-tz" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-tz-val">0.00</span></div>
+        <div class="dfd-group-title">Rotation (deg)</div>
+        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-rx" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-rx-val">0</span></div>
+        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-ry" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-ry-val">0</span></div>
+        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-rz" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-rz-val">0</span></div>
+        <div class="dfd-group-title">Scale</div>
+        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-sx" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sx-val">1.00</span></div>
+        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-sy" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sy-val">1.00</span></div>
+        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-sz" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sz-val">1.00</span></div>
+        <button id="dfd-sym" aria-pressed="false">XY Symmetry: Off</button>
+        <button id="dfd-reset">Reset</button>
+      </div>
+    </div>
+    <p class="graybox"><b>Interactive Deformation.</b> We apply our distilled image weights to real-time mesh deformation. Click any point on the mesh to select a handle vertex.
+      Adjust the sliders to apply translation, rotation, and scale deformations in real time.
+      Surface colors show the influence (weight) of the selected handle on each vertex. See the code for a full implementation in Polyscope.</p>
   </section>
   <script>
     // upon load, restart and sync the other video in the pair
@@ -290,6 +423,437 @@
       document.querySelector(".carousel-arrow-right").addEventListener("click", () => scroll(1));
     })();
   </script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ── NPY parser ───────────────────────────────────────────────────────────
+    function parseNpy(buf) {
+      const magic = new Uint8Array(buf, 0, 6);
+      const major = new Uint8Array(buf)[6];
+      const dv = new DataView(buf);
+      let headerLen, dataOffset;
+      if (major === 1) {
+        headerLen = dv.getUint16(8, true);
+        dataOffset = 10 + headerLen;
+      } else {
+        headerLen = dv.getUint32(8, true);
+        dataOffset = 12 + headerLen;
+      }
+      const start = major === 1 ? 10 : 12;
+      const headerStr = new TextDecoder('ascii').decode(new Uint8Array(buf, start, headerLen));
+      const shapeMatch = headerStr.match(/'shape'\s*:\s*\(([^)]+)\)/);
+      const shape = shapeMatch[1].split(',').map(s => s.trim()).filter(Boolean).map(Number);
+      return { data: new Float32Array(buf, dataOffset), shape };
+    }
+
+    // ── Matrix helpers (row-major Float32Array(16)) ───────────────────────────
+    function mat4Id() {
+      const m = new Float32Array(16);
+      m[0] = m[5] = m[10] = m[15] = 1;
+      return m;
+    }
+    function mat4Mul(A, B) {
+      const C = new Float32Array(16);
+      for (let i = 0; i < 4; i++)
+        for (let j = 0; j < 4; j++)
+          for (let k = 0; k < 4; k++)
+            C[i*4+j] += A[i*4+k] * B[k*4+j];
+      return C;
+    }
+    function mat4MulVec4(M, x, y, z, w) {
+      return [
+        M[0]*x + M[1]*y + M[2]*z + M[3]*w,
+        M[4]*x + M[5]*y + M[6]*z + M[7]*w,
+        M[8]*x + M[9]*y + M[10]*z + M[11]*w,
+        M[12]*x + M[13]*y + M[14]*z + M[15]*w,
+      ];
+    }
+    function rotX(t) { const c=Math.cos(t),s=Math.sin(t),m=mat4Id(); m[5]=c;m[6]=-s;m[9]=s;m[10]=c; return m; }
+    function rotY(t) { const c=Math.cos(t),s=Math.sin(t),m=mat4Id(); m[0]=c;m[2]=s;m[8]=-s;m[10]=c; return m; }
+    function rotZ(t) { const c=Math.cos(t),s=Math.sin(t),m=mat4Id(); m[0]=c;m[1]=-s;m[4]=s;m[5]=c; return m; }
+    function buildAffine(tx,ty,tz,rxDeg,ryDeg,rzDeg,sx,sy,sz) {
+      const D = Math.PI/180;
+      const T = mat4Id(); T[3]=tx; T[7]=ty; T[11]=tz;
+      const R = mat4Mul(mat4Mul(rotZ(rzDeg*D), rotY(ryDeg*D)), rotX(rxDeg*D));
+      const S = mat4Id(); S[0]=sx; S[5]=sy; S[10]=sz;
+      return mat4Mul(mat4Mul(T, R), S);
+    }
+
+    // ── Reds colormap (5-stop approx of matplotlib Reds) ─────────────────────
+    const REDS = [
+      [0.00, 1.000, 1.000, 1.000],
+      [0.25, 0.988, 0.867, 0.824],
+      [0.50, 0.957, 0.647, 0.510],
+      [0.75, 0.843, 0.188, 0.153],
+      [1.00, 0.404, 0.000, 0.051],
+    ];
+    function redsRGB(w) {
+      for (let i = 0; i < REDS.length - 1; i++) {
+        const [t0,r0,g0,b0] = REDS[i], [t1,r1,g1,b1] = REDS[i+1];
+        if (w <= t1) {
+          const t = (w - t0) / (t1 - t0);
+          return [r0+t*(r1-r0), g0+t*(g1-g0), b0+t*(b1-b0)];
+        }
+      }
+      return [REDS[REDS.length-1][1], REDS[REDS.length-1][2], REDS[REDS.length-1][3]];
+    }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+    let mesh, geometry, origPositions, loadedPositions, geomToOriginal, weightsData, V;
+    let selectedOrigVI = null, selectedGeomVI = null;
+    let texture, handleSphere;
+    let normOrigVerts; // Float32Array (V*3): normalized positions of original OBJ vertices
+    let yzGroup0;      // Uint8Array (V): 1 if original vertex x >= 0 (YZ-plane group)
+    let symmetryEnabled = false;
+
+    const overlayEl = document.getElementById('dfd-overlay');
+    const statusEl  = document.getElementById('dfd-status');
+
+    // ── Scene setup ───────────────────────────────────────────────────────────
+    const canvas   = document.getElementById('dfd-canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    const scene  = new THREE.Scene();
+    scene.background = new THREE.Color(0xe9f0f7);
+
+    const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+    camera.position.set(0, 0, 3);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(1, 2, 2);
+    scene.add(dirLight);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    function syncSize() {
+      const w = canvas.clientWidth, h = canvas.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    syncSize();
+    new ResizeObserver(syncSize).observe(canvas);
+
+    function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+    animate();
+
+    // ── Load assets ───────────────────────────────────────────────────────────
+    Promise.all([
+      fetch('assets/spot.obj').then(r => r.text()),
+      new THREE.TextureLoader().loadAsync('assets/spot_texture.png'),
+      fetch('assets/spot_weights.npy').then(r => r.arrayBuffer()).then(parseNpy),
+    ]).then(([objText, tex, npy]) => {
+      texture = tex;
+      texture.colorSpace = THREE.SRGBColorSpace;
+      weightsData = npy.data;
+      V = npy.shape[0];
+      initMesh(objText);
+      overlayEl.style.display = 'none';
+      statusEl.textContent = 'Click a vertex to select a deformation handle.';
+    }).catch(err => {
+      overlayEl.textContent = 'Error loading assets.';
+      console.error(err);
+    });
+
+    // ── OBJ parsing helpers ───────────────────────────────────────────────────
+    function parseObjVerts(objText) {
+      const verts = [];
+      for (const line of objText.split('\n')) {
+        if (line.startsWith('v ')) {
+          const parts = line.trim().split(/\s+/);
+          verts.push([parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3])]);
+        }
+      }
+      return verts;
+    }
+
+    // Build geomToOriginal by tracing face lines — same expansion order as OBJLoader.
+    // OBJLoader creates a flat non-indexed buffer: each face becomes N-2 triangles
+    // via fan triangulation, appended in file order. This matches igl.read_obj's
+    // 0-based vertex ordering exactly, with no fragile position matching needed.
+    function buildGeomToOriginal(objText) {
+      const result = [];
+      for (const line of objText.split('\n')) {
+        const t = line.trim();
+        if (!t.startsWith('f ')) continue;
+        const parts = t.slice(2).trim().split(/\s+/);
+        // Each token is v, v/vt, v/vt/vn, or v//vn — take only the v index
+        const vIdxs = parts.map(p => {
+          const i = parseInt(p.split('/')[0]);
+          return i > 0 ? i - 1 : parts.length + i; // 0-based, handle negative indices
+        });
+        // Fan triangulation (matches three.js OBJLoader)
+        for (let i = 1; i < vIdxs.length - 1; i++) {
+          result.push(vIdxs[0], vIdxs[i], vIdxs[i + 1]);
+        }
+      }
+      return new Int32Array(result);
+    }
+
+    function initMesh(objText) {
+      const rawVerts = parseObjVerts(objText);
+
+      // Compute normalization params from all v entries — matches Python cube_normalize.
+      // Using rawVerts (not geometry buffer) ensures unused vertices don't shift the bbox.
+      let mnX=Infinity,mnY=Infinity,mnZ=Infinity,mxX=-Infinity,mxY=-Infinity,mxZ=-Infinity;
+      for (const [x,y,z] of rawVerts) {
+        if(x<mnX)mnX=x; if(y<mnY)mnY=y; if(z<mnZ)mnZ=z;
+        if(x>mxX)mxX=x; if(y>mxY)mxY=y; if(z>mxZ)mxZ=z;
+      }
+      const cx=(mnX+mxX)/2, cy=(mnY+mxY)/2, cz=(mnZ+mxZ)/2;
+      const sc = 2 / Math.max(mxX-mnX, mxY-mnY, mxZ-mnZ);
+
+      // Build geomToOriginal directly from face data — robust, no position matching
+      geomToOriginal = buildGeomToOriginal(objText);
+
+      // Store normalized original vertex positions for symmetry group lookup
+      normOrigVerts = new Float32Array(rawVerts.length * 3);
+      for (let i = 0; i < rawVerts.length; i++) {
+        normOrigVerts[i*3]   = (rawVerts[i][0] - cx) * sc;
+        normOrigVerts[i*3+1] = (rawVerts[i][1] - cy) * sc;
+        normOrigVerts[i*3+2] = (rawVerts[i][2] - cz) * sc;
+      }
+      // XY-plane symmetry groups: group0 = z >= 0, group1 = z < 0
+      yzGroup0 = new Uint8Array(rawVerts.length);
+      for (let i = 0; i < rawVerts.length; i++) {
+        yzGroup0[i] = normOrigVerts[i*3+2] >= 0 ? 1 : 0;
+      }
+
+      // Load via OBJLoader
+      const group = new OBJLoader().parse(objText);
+      geometry = group.children[0].geometry;
+
+      // Apply normalization using rawVerts params (same center/scale as Python)
+      const posAttr = geometry.attributes.position;
+      const N = posAttr.count;
+      for (let i = 0; i < N; i++) {
+        posAttr.setXYZ(i,
+          (posAttr.getX(i) - cx) * sc,
+          (posAttr.getY(i) - cy) * sc,
+          (posAttr.getZ(i) - cz) * sc);
+      }
+      posAttr.needsUpdate = true;
+      geometry.computeVertexNormals();
+
+      // Store original (normalized) positions — loadedPositions never changes (for full reset)
+      loadedPositions = posAttr.array.slice();
+      origPositions = loadedPositions.slice();
+
+
+      // Vertex color buffer (white)
+      const colors = new Float32Array(N * 3).fill(1.0);
+      geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+      const mat = new THREE.MeshStandardMaterial({
+        map: texture,
+        vertexColors: false,
+        roughness: 0.7,
+        metalness: 0.1,
+      });
+
+      mesh = new THREE.Mesh(geometry, mat);
+      scene.add(mesh);
+
+      // Yellow sphere marker for selected vertex
+      handleSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(0.022, 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0xffff00 })
+      );
+      handleSphere.visible = false;
+      scene.add(handleSphere);
+    }
+
+    // ── Click handler ─────────────────────────────────────────────────────────
+    const raycaster = new THREE.Raycaster();
+    const mouse2d = new THREE.Vector2();
+    let mouseDownX = 0, mouseDownY = 0;
+
+    canvas.addEventListener('mousedown', e => { mouseDownX = e.clientX; mouseDownY = e.clientY; });
+    canvas.addEventListener('click', e => {
+      if (!mesh) return;
+      if (Math.hypot(e.clientX - mouseDownX, e.clientY - mouseDownY) > 5) return;
+
+      const rect = canvas.getBoundingClientRect();
+      mouse2d.x = ((e.clientX - rect.left) / rect.width)  *  2 - 1;
+      mouse2d.y = ((e.clientY - rect.top)  / rect.height) * -2 + 1;
+      raycaster.setFromCamera(mouse2d, camera);
+      const hits = raycaster.intersectObject(mesh);
+      if (!hits.length) {
+        // Clicked off the surface — restore texture, hide sphere, clear selection
+        if (selectedOrigVI !== null) {
+          selectedOrigVI = null;
+          selectedGeomVI = null;
+          if (handleSphere) handleSphere.visible = false;
+          const mat = mesh.material;
+          mat.map = texture;
+          mat.vertexColors = false;
+          mat.needsUpdate = true;
+          statusEl.textContent = 'Click a vertex to select a deformation handle.';
+        }
+        return;
+      }
+
+      const { face, point } = hits[0];
+      const posAttr = geometry.attributes.position;
+      const cands = [face.a, face.b, face.c];
+      let nearestGI = cands[0], nearestD = Infinity;
+      const tmp = new THREE.Vector3();
+      for (const gi of cands) {
+        tmp.fromBufferAttribute(posAttr, gi);
+        const d = tmp.distanceTo(point);
+        if (d < nearestD) { nearestD = d; nearestGI = gi; }
+      }
+
+      selectedOrigVI = geomToOriginal[nearestGI];
+      selectedGeomVI = nearestGI;
+
+      // Commit current deformed state as the new base for the next deformation
+      origPositions = geometry.attributes.position.array.slice();
+      resetSliders();
+      colorByWeights(selectedOrigVI, nearestGI);
+
+      // Place sphere at selected vertex
+      const posAttr2 = geometry.attributes.position;
+      handleSphere.position.set(posAttr2.getX(nearestGI), posAttr2.getY(nearestGI), posAttr2.getZ(nearestGI));
+      handleSphere.visible = true;
+
+      statusEl.textContent = `Handle vertex: #${selectedOrigVI}`;
+    });
+
+    function resetPositions() {
+      const posAttr = geometry.attributes.position;
+      posAttr.array.set(origPositions);
+      posAttr.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+
+    function colorByWeights(origVI, geomVI) {
+      const colorAttr = geometry.attributes.color;
+      const N = colorAttr.count;
+      const row = weightsData.subarray(origVI * V, (origVI + 1) * V);
+      for (let gi = 0; gi < N; gi++) {
+        const w = row[geomToOriginal[gi]];
+        const [r,g,b] = redsRGB(Math.max(0, Math.min(1, w)));
+        colorAttr.setXYZ(gi, r, g, b);
+      }
+      // Highlight selected vertex yellow
+      colorAttr.setXYZ(geomVI, 1, 1, 0);
+      colorAttr.needsUpdate = true;
+
+      const mat = mesh.material;
+      mat.map = null;
+      mat.vertexColors = true;
+      mat.needsUpdate = true;
+    }
+
+    // ── Slider logic ──────────────────────────────────────────────────────────
+    const sliderIds = ['tx','ty','tz','rx','ry','rz','sx','sy','sz'];
+    for (const id of sliderIds) {
+      const el = document.getElementById(`dfd-${id}`);
+      const valEl = document.getElementById(`dfd-${id}-val`);
+      el.addEventListener('input', () => {
+        const v = parseFloat(el.value);
+        valEl.textContent = id.startsWith('r') ? String(Math.round(v)) : v.toFixed(2);
+        applyDeformation();
+      });
+    }
+
+    function readSliders() {
+      const g = id => parseFloat(document.getElementById(`dfd-${id}`).value);
+      return { tx:g('tx'),ty:g('ty'),tz:g('tz'), rx:g('rx'),ry:g('ry'),rz:g('rz'), sx:g('sx'),sy:g('sy'),sz:g('sz') };
+    }
+
+    function resetSliders() {
+      for (const id of sliderIds) {
+        const el = document.getElementById(`dfd-${id}`);
+        const valEl = document.getElementById(`dfd-${id}-val`);
+        el.value = id.startsWith('s') ? '1' : '0';
+        valEl.textContent = id.startsWith('s') ? '1.00' : id.startsWith('r') ? '0' : '0.00';
+      }
+    }
+
+    function applyDeformation() {
+      if (selectedOrigVI === null || !mesh) return;
+      const {tx,ty,tz,rx,ry,rz,sx,sy,sz} = readSliders();
+      const A = buildAffine(tx,ty,tz,rx,ry,rz,sx,sy,sz);
+
+      // XY-plane symmetry (axis=2): negate tz and the two non-z rotation angles,
+      // apply the reflected affine to whichever half doesn't contain the handle vertex.
+      // Matches interactive_affine.py lines 891–903 (else branch, axis==2).
+      let Asym = null;
+      let handleInGroup0 = false;
+      if (symmetryEnabled) {
+        handleInGroup0 = yzGroup0[selectedOrigVI] === 1;
+        Asym = buildAffine(tx, ty, -tz, -rx, -ry, rz, sx, sy, sz);
+      }
+
+      const posAttr = geometry.attributes.position;
+      const row = weightsData.subarray(selectedOrigVI * V, (selectedOrigVI + 1) * V);
+      const N = posAttr.count;
+
+      for (let gi = 0; gi < N; gi++) {
+        const ox = origPositions[gi*3], oy = origPositions[gi*3+1], oz = origPositions[gi*3+2];
+        const ovi = geomToOriginal[gi];
+        const w = Math.max(0, Math.min(1, row[ovi]));
+        // Use reflected affine for vertices on the opposite side of the YZ plane
+        const inReflectedGroup = symmetryEnabled && (yzGroup0[ovi] === 1) !== handleInGroup0;
+        const [ax,ay,az] = mat4MulVec4(inReflectedGroup ? Asym : A, ox, oy, oz, 1);
+        posAttr.setXYZ(gi, (1-w)*ox + w*ax, (1-w)*oy + w*ay, (1-w)*oz + w*az);
+      }
+      posAttr.needsUpdate = true;
+      geometry.computeVertexNormals();
+
+      // Keep sphere on the selected vertex
+      if (selectedGeomVI !== null && handleSphere) {
+        handleSphere.position.set(posAttr.getX(selectedGeomVI), posAttr.getY(selectedGeomVI), posAttr.getZ(selectedGeomVI));
+      }
+    }
+
+    // ── Reset button ──────────────────────────────────────────────────────────
+    document.getElementById('dfd-reset').addEventListener('click', () => {
+      if (!mesh) return;
+      selectedOrigVI = null;
+      selectedGeomVI = null;
+      // Restore to original load-time positions
+      origPositions = loadedPositions.slice();
+      const posAttr = geometry.attributes.position;
+      posAttr.array.set(loadedPositions);
+      posAttr.needsUpdate = true;
+      geometry.computeVertexNormals();
+      resetSliders();
+      if (handleSphere) handleSphere.visible = false;
+      const mat = mesh.material;
+      mat.map = texture;
+      mat.vertexColors = false;
+      mat.needsUpdate = true;
+      statusEl.textContent = 'Click a vertex to select a deformation handle.';
+    });
+
+    // ── Symmetry toggle ───────────────────────────────────────────────────────
+    document.getElementById('dfd-sym').addEventListener('click', () => {
+      symmetryEnabled = !symmetryEnabled;
+      const btn = document.getElementById('dfd-sym');
+      btn.setAttribute('aria-pressed', symmetryEnabled ? 'true' : 'false');
+      btn.textContent = symmetryEnabled ? 'XY Symmetry: On' : 'XY Symmetry: Off';
+      applyDeformation(); // re-apply with new symmetry setting
+    });
+  </script>
+
   <section>
     <h2>Bibtex</h2>
     <p class="graybox">@InProceedings{DFD_Liu_2026_CVPR,<br>
