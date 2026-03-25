@@ -9,33 +9,42 @@ Official implementation of CVPR 2026 paper "Deep Feature Deformation Weights".
 
 ## Prerequisites
 
-<!-- TODO: key version constraints -->
+- Python 3.10
+- CUDA 12.8
+- Node.js ≥ 18 (required only for GLB mesh simplification via `--reduction`)
 
 ### Installation
-
-<!-- TODO: environment.yml -->
 
 ```bash
 conda env create -f environment.yml
 conda activate dfd
+uv pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
+uv pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu128
+npm install -g @gltf-transform/cli
 ```
+
+`distillation.py` supports distillation for the following image models: dino2, dino3, radio, sam, sam2, clip.
+The user is responsible for installing any prerequisite libraries or weights associated with use of these models. Make sure to set -H, -W to an appropriate multiple of the patch size otherwise feature extraction will fail.
+SAM2 installation is also required for using sam-based feature refinement during distillation (see below).
 
 ## Barycentric Feature Distillation
 
 You can call `barycentric_distillation()` in `distillation.py` to perform feature distillation, which distills per-pixel image features into a feature field via barycentric sampling. The script can be called directly using the example asset as follows:
 
 ```bash
-python distillation.py assets/crab/crab.glb outputs/crab --model dino2 --arch dinov2_vitg14_reg
+python distillation.py assets/crab/crab.glb outputs/crab/dinov2_vitg14_reg --model dino2 --arch dinov2_vitg14_reg -H 518 -W 518
 ```
 
-Outputs are saved to `outputs/crab/`, including the trained MLP (`final_encoder.pth`), features sampled on mesh vertices (`crab.pt`), and PCA-colored screenshots.
+Outputs are saved to `outputs/crab/dinov2_vitg14_reg`, including the trained MLP (`final_encoder.pth`), features sampled on mesh vertices (`crab.pt`), and PCA-colored screenshots.
+
+<img src="assets/pca1.png" width="40%"><img src="assets/pca3.png" width="40%">
 
 ### Command Line Arguments
 Objs with texture coordinates can be rendered with texture using the `--texturedir` kwarg.
 
-High resolution meshes (>100k vertices) should be first downsampled before rendering by using the `--reduction` kwarg. This calls either GLTF-transform (for GLBs) or QEM decimation (other formats) under the hood. The distillation is guaranteed to be fast (<5 min) for any choice of encoder, but for high resolution shapes the rendering becomes a non-trivial bottleneck.
+High resolution meshes (>1m vertices) should be first downsampled before rendering by using the `--reduction` kwarg. This calls either GLTF-transform (for GLBs) or QEM decimation (other formats) under the hood. The distillation should take at most a few minutes for any choice of encoder/mesh, but for high resolution shapes the rendering can run into memory issues.
 
-`--use_sam` will refine the render feature maps by using SAM segmentation to identify areas where patch-level features "bleed" into other parts of the shape and fix them. This will improve distilled feature quality but significantly improve runtime.
+`--use_sam` will refine the render feature maps by using SAM segmentation to identify areas where patch-level features "bleed" into other parts of the shape and fix them. This will improve distilled feature quality but will significantly improve runtime (~5 min longer).
 
 | Argument | Default | Description |
 |---|---|---|
@@ -80,7 +89,7 @@ High resolution meshes (>100k vertices) should be first downsampled before rende
 
 | Argument | Default | Description |
 |---|---|---|
-| `--use_sam` | `0` | If > 0, uses SAM masks to refine per-pixel features and reduce feature bleeding. Value determines the outlier threshold (L2 distance). |
+| `--use_sam` | `0` | If > 0, uses SAM masks to refine per-pixel features and reduce feature bleeding. Value determines the outlier threshold (L2 distance). Value of 1 is recommended.|
 
 **MLP parameters**
 
@@ -111,7 +120,7 @@ High resolution meshes (>100k vertices) should be first downsampled before rende
 Run the interactive GUI using the weights distilled above:
 
 ```bash
-python interactive_affine.py assets/crab/crab.glb --weightsdir outputs/crab/final_encoder.pth
+python interactive_affine.py assets/crab/crab.glb --weightsdir outputs/crab/dinov2_vitg14_reg/final_encoder.pth
 ```
 
 ## Citation
