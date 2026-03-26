@@ -197,6 +197,35 @@
     </p>
 
   </section>
+  <section class="gallery" id="deformation-section">
+    <h2>Deformation Application</h2>
+    <div id="deformation-app">
+      <div id="dfd-canvas-container">
+        <canvas id="dfd-canvas"></canvas>
+        <div id="dfd-overlay">Loading...</div>
+      </div>
+      <div id="dfd-sidebar">
+        <div id="dfd-status">No vertex selected.</div>
+        <div class="dfd-group-title">Translation</div>
+        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-tx" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-tx-val">0.00</span></div>
+        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-ty" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-ty-val">0.00</span></div>
+        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-tz" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-tz-val">0.00</span></div>
+        <div class="dfd-group-title">Rotation (deg)</div>
+        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-rx" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-rx-val">0</span></div>
+        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-ry" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-ry-val">0</span></div>
+        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-rz" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-rz-val">0</span></div>
+        <div class="dfd-group-title">Scale</div>
+        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-sx" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sx-val">1.00</span></div>
+        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-sy" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sy-val">1.00</span></div>
+        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-sz" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sz-val">1.00</span></div>
+        <button id="dfd-sym" aria-pressed="false">XY Symmetry: Off</button>
+        <button id="dfd-reset">Reset</button>
+      </div>
+    </div>
+    <p class="graybox"><b>Interactive Deformation.</b> We apply our distilled image weights to real-time mesh deformation. Click any point on the mesh to select a handle vertex.
+      Adjust the sliders to apply translation, rotation, and scale deformations in real time.
+      Surface colors show the influence (weight) of the selected handle on each vertex. See the code for a full implementation in Polyscope.</p>
+  </section>
   <section>
     <h2>Barycentric Feature Distillation</h2>
     <img class="mediumwidth blcent" src="assets/barycentricdistillation.png"
@@ -240,35 +269,6 @@
     <b>Results Carousel.</b> We show a selection of results using shapes and prescribed deformations from the APAP and Part-Objaverse Tiny datasets.
     The results show a combination of translation-based and affine deformations, and the corresponding weight heatmap is shown for single-handle deformations.
     </p>
-  </section>
-  <section class="gallery" id="deformation-section">
-    <h2>Deformation Application</h2>
-    <div id="deformation-app">
-      <div id="dfd-canvas-container">
-        <canvas id="dfd-canvas"></canvas>
-        <div id="dfd-overlay">Loading...</div>
-      </div>
-      <div id="dfd-sidebar">
-        <div id="dfd-status">No vertex selected.</div>
-        <div class="dfd-group-title">Translation</div>
-        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-tx" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-tx-val">0.00</span></div>
-        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-ty" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-ty-val">0.00</span></div>
-        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-tz" min="-1" max="1" step="0.01" value="0"><span class="dfd-val" id="dfd-tz-val">0.00</span></div>
-        <div class="dfd-group-title">Rotation (deg)</div>
-        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-rx" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-rx-val">0</span></div>
-        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-ry" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-ry-val">0</span></div>
-        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-rz" min="-90" max="90" step="1" value="0"><span class="dfd-val" id="dfd-rz-val">0</span></div>
-        <div class="dfd-group-title">Scale</div>
-        <div class="dfd-slider-row"><label>X</label><input type="range" id="dfd-sx" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sx-val">1.00</span></div>
-        <div class="dfd-slider-row"><label>Y</label><input type="range" id="dfd-sy" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sy-val">1.00</span></div>
-        <div class="dfd-slider-row"><label>Z</label><input type="range" id="dfd-sz" min="0.1" max="3.0" step="0.01" value="1"><span class="dfd-val" id="dfd-sz-val">1.00</span></div>
-        <button id="dfd-sym" aria-pressed="false">XY Symmetry: Off</button>
-        <button id="dfd-reset">Reset</button>
-      </div>
-    </div>
-    <p class="graybox"><b>Interactive Deformation.</b> We apply our distilled image weights to real-time mesh deformation. Click any point on the mesh to select a handle vertex.
-      Adjust the sliders to apply translation, rotation, and scale deformations in real time.
-      Surface colors show the influence (weight) of the selected handle on each vertex. See the code for a full implementation in Polyscope.</p>
   </section>
   <script>
     // upon load, restart and sync the other video in the pair
