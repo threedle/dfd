@@ -277,7 +277,7 @@ def barycentric_distillation(
 
     class FeatureDataset(Dataset):
         def __init__(self, features, positions, masks=None, flatten=False, featurebatchsize=None):
-            """features: B-list of shape [H, W, C]
+            """features: V-list of shape [A, H, W, C] where V*A = B (A is featurebatchsize)
             positions: [B, H, W, 3]
             masks: [B, H, W], Optional
             flatten: whether to flatten the views
@@ -396,22 +396,22 @@ def barycentric_distillation(
                 img.save(os.path.join(renderdir, f"render_{i:02}.png"))
 
         # ==================== SAM Mask Generation ====================
-        if use_sam > 0:
+        if use_sam > 0 and not os.path.exists(os.path.join(cachedir, f"view_features.pt")):
             print("Generating segmentation masks using SAM ...")
             if timing:
                 presamtime = time.time()
 
-            from sam_utils import generate_sam_masks
-            from GLOBALS import patch_sizes
+                from sam_utils import generate_sam_masks
+                from GLOBALS import patch_sizes
 
-            batched_sam = generate_sam_masks(
-                batched_renderings, H, W, patch_sizes[model], device,
-                debug=debug, debug_dir=cachedir,
-            )
+                batched_sam = generate_sam_masks(
+                    batched_renderings, H, W, patch_sizes[model], device,
+                    debug=debug, debug_dir=cachedir,
+                )
 
-            if timing:
-                samtime = time.time() - presamtime
-                print(f"SAM segmentation completed in {samtime:02f} seconds")
+                if timing:
+                    samtime = time.time() - presamtime
+                    print(f"SAM segmentation completed in {samtime:02f} seconds")
 
         # ==================== Feature Extraction ====================
         if not os.path.exists(os.path.join(cachedir, f"view_features.pt")):
@@ -468,10 +468,14 @@ def barycentric_distillation(
 
             gc.collect()
             torch.cuda.empty_cache()
+            
+            if not no_cache: 
+                torch.save(view_features, os.path.join(cachedir, f"view_features.pt"), map_location='cpu')
+                print(f"Saved view features to {cachedir}")
         else:
             preloadtime = time.time()
             view_features = torch.load(os.path.join(cachedir, f"view_features.pt"), map_location='cpu', weights_only=True)
-            print(f"Loaded cached view features from {os.path.join(cachedir, 'view_features.pt')}")
+            print(f"Loaded cached view features from {cachedir}")
 
             if debug:
                 t2 = (time.time() - preloadtime) / 60

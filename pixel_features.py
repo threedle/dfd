@@ -8,27 +8,52 @@ from GLOBALS import patch_sizes
 def expand_patches(down, patch_size=16):
     """
     down: (B', H', W', C') or (B, H', W')
-    Upsamples by repeating each patch patch_size times in H and W dimensions.
+    Upsamples by repeating each spatial cell patch_size times along H and W.
+
+    patch_size: int for symmetric replication, or ``(ph, pw)`` for independent H/W factors.
     """
-    if down.ndim == 4:
-        # (B, H', W', C) -> use F.interpolate for efficiency
-        return torch.nn.functional.interpolate(
-            down.permute(0, 3, 1, 2),
-            scale_factor=patch_size,
-            mode='nearest',
-        ).permute(0, 2, 3, 1)
-    elif down.ndim == 3:
-        # (B, H', W') -> use F.interpolate
-        return torch.nn.functional.interpolate(
-            down.unsqueeze(1).float(),
-            scale_factor=patch_size,
-            mode='nearest',
-        ).squeeze(1).to(down.dtype)
+    if isinstance(patch_size, tuple):
+        ph, pw = int(patch_size[0]), int(patch_size[1])
     else:
-        return torch.repeat_interleave(
-            torch.repeat_interleave(down, patch_size, dim=1),
-            patch_size, dim=2
+        ph = pw = int(patch_size)
+
+    if down.ndim == 4:
+        x = down.permute(0, 3, 1, 2).contiguous()  # BCHW
+        if ph != 1:
+            x = torch.repeat_interleave(x, ph, dim=2)
+        if pw != 1:
+            x = torch.repeat_interleave(x, pw, dim=3)
+        return x.permute(0, 2, 3, 1)
+    if down.ndim == 3:
+        x = down.unsqueeze(1).float()
+        dtype = down.dtype
+        if ph != 1:
+            x = torch.repeat_interleave(x, ph, dim=2)
+        if pw != 1:
+            x = torch.repeat_interleave(x, pw, dim=3)
+        return x.squeeze(1).to(dtype)
+    if ph != pw:
+        raise ValueError(f"Asymmetric patch_size {patch_size} not supported for ndim={down.ndim}")
+    return torch.repeat_interleave(torch.repeat_interleave(down, ph, dim=1), pw, dim=2)
+
+
+def expand_feature_map_nchw(feature_bchw, target_h: int, target_w: int):
+    """
+    Replicate-patch upsample ``(B, C, h, w)`` to ``(B, C, target_h, target_w)``.
+
+    Raises if ``target_h`` / ``target_w`` are not exact multiples of the grid size (patch-aligned dense map).
+    """
+    if feature_bchw.ndim != 4:
+        raise ValueError(f"expand_feature_map_nchw expects (B,C,h,w); got shape {tuple(feature_bchw.shape)}")
+    _, _, h, w = feature_bchw.shape
+    if target_h % h != 0 or target_w % w != 0:
+        raise ValueError(
+            f"Cannot patch-expand spatial map {(h, w)} to {(target_h, target_w)}: "
+            f"target dims must be divisible by grid dims (try render H,W multiples of {max(h, w)})"
         )
+    ph, pw = target_h // h, target_w // w
+    hwc = expand_patches(feature_bchw.permute(0, 2, 3, 1), patch_size=(ph, pw))
+    return hwc.permute(0, 3, 1, 2)
 
 # Computes cosine distance between 4 neighbor features (TBLR -- zero out TB or LR if any are empty patches)
 def neighbor_cosine(features, patchmask):
@@ -524,16 +549,9 @@ def get_pixel_features_dino3(device, dino_model, imgs, H, W, normalize=True,
                 cosines.append(batch_distances)
 
             if compute_variance and patchmask is not None:
-                variance = neighbor_variance_8ring(batch_features, patchmask[i:i+batch_size])
-
-                # Upsample the variance to the original image size
-                patchmask = torch.nn.functional.interpolate(
-                    variance,
-                    size=(H, W),
-                    mode='bilinear',
-                    antialias=True,
-                )
-                variances.append(variance)
+                batch_variance = neighbor_variance_8ring(batch_features, patchmask[i:i+batch_size])
+                batch_variance = expand_patches(batch_variance.cpu(), patch_size=patch_size)
+                variances.append(batch_variance)
 
             # Upsample features to original image size
             batch_features = expand_patches(batch_features.cpu(), patch_size=patch_size)
@@ -594,8 +612,7 @@ def get_pixel_features_sam(device, sam_model, imgs, normalize=True,
             else:
                 batch_features = batch_features.float()
 
-            # Upsample
-            batch_features = torch.nn.functional.interpolate(batch_features, (oldh, oldw), mode="bilinear", antialias=True)
+            batch_features = expand_feature_map_nchw(batch_features, oldh, oldw)
 
             if normalize:
                 batch_features = torch.nn.functional.normalize(batch_features, dim=1)
@@ -631,9 +648,13 @@ def get_pixel_features_clip(device, clip_model, imgs, normalize=True,
                 if weight > 0:
                     # NOTE: first feature is the CLS token
                     batch_conv_feature = batch_conv_features[j][:, 1:, :]
-                    batch_conv_feature = batch_conv_feature.reshape(len(batch_conv_feature), int(math.sqrt(batch_conv_feature.shape[1])), int(math.sqrt(batch_conv_feature.shape[1])), batch_conv_feature.shape[-1])
-                    batch_conv_feature = torch.nn.functional.interpolate(batch_conv_feature.permute(0, 3, 1, 2), (imgs.shape[2], imgs.shape[3]),
-                                                                         mode="bilinear", antialias=True)
+                    gh = gw = int(math.sqrt(batch_conv_feature.shape[1]))
+                    batch_conv_feature = batch_conv_feature.reshape(
+                        len(batch_conv_feature), gh, gw, batch_conv_feature.shape[-1]
+                    ).permute(0, 3, 1, 2).contiguous()
+                    batch_conv_feature = expand_feature_map_nchw(
+                        batch_conv_feature, imgs.shape[2], imgs.shape[3]
+                    )
                     if batch_features is None:
                         batch_features = batch_conv_feature * weight
                     else:
@@ -654,7 +675,13 @@ def get_pixel_features_clip(device, clip_model, imgs, normalize=True,
 def get_pixel_features_sam2(device, sam2_model, imgs, normalize=True,
                             batch_size=20, half=True, debug=False,
                             concat_hr=False,):
-    import os
+    """
+    Dense features per original-image pixel via patch replication from SAM2 backbone maps.
+
+    Each image height/width must be divisible by the finest backbone grid size on that path
+    (64px without ``concat_hr``; 256px with ``concat_hr``, since high-res feats include a 256 grid).
+    This matches SAM2 assuming a square ``Resize`` preprocessing of ``image_size`` (e.g. 1024).
+    """
     from tqdm import tqdm
 
     np_renderings = (imgs.cpu().numpy() * 255).astype(np.uint8)[..., :3]
@@ -669,16 +696,14 @@ def get_pixel_features_sam2(device, sam2_model, imgs, normalize=True,
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             sam2_model.set_image_batch(batch)
 
+        tgt_h, tgt_w = batch[0].shape[0], batch[0].shape[1]
         image_embed = sam2_model._features['image_embed']
         high_res_feats = sam2_model._features['high_res_feats']
-        image_embed = torch.nn.functional.interpolate(image_embed, (batch[0].shape[0], batch[0].shape[1]),
-                                                                    mode="bilinear", antialias=True)
+        image_embed = expand_feature_map_nchw(image_embed, tgt_h, tgt_w)
 
         if concat_hr:
-            hr0 = torch.nn.functional.interpolate(high_res_feats[0], (batch[0].shape[0], batch[0].shape[1]),
-                                                                    mode="bilinear", antialias=True)
-            hr1 = torch.nn.functional.interpolate(high_res_feats[0], (batch[0].shape[0], batch[0].shape[1]),
-                                                                    mode="bilinear", antialias=True)
+            hr0 = expand_feature_map_nchw(high_res_feats[0], tgt_h, tgt_w)
+            hr1 = expand_feature_map_nchw(high_res_feats[1], tgt_h, tgt_w)
             image_embed = torch.cat([image_embed, hr0, hr1], dim=1)
 
         if normalize:

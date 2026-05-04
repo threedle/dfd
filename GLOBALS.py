@@ -29,6 +29,7 @@ patch_sizes = {
     'dino3': 16,
     'clip': 14,
     'radio': 16,
+    'sam2': 16,
     # Architecture-name aliases (so callers can key by actual model architecture/id)
     'dinov2_vitg14_reg': 14,
     'dinov3_vit7b16': 16,
