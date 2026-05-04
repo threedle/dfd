@@ -25,7 +25,9 @@ npm install -g @gltf-transform/cli
 
 `distillation.py` supports distillation for the following image models: dino2, dino3, radio, sam, sam2, clip.
 
-The user is responsible for installing any prerequisite libraries or weights associated with use of these models. Make sure to set -H, -W to an appropriate multiple of the patch size otherwise feature extraction will fail.
+The user is responsible for installing any prerequisite libraries or weights associated with use of these models. 
+
+**Make sure to set -H, -W to an appropriate multiple of the patch size otherwise feature extraction will fail.**
 
 SAM2 installation is also required for using sam-based feature refinement during distillation (see below).
 
