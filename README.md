@@ -18,8 +18,8 @@ Official implementation of CVPR 2026 paper "Deep Feature Deformation Weights".
 ```bash
 conda env create -f environment.yml
 conda activate dfd
-uv pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
 uv pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu128
+uv pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
 npm install -g @gltf-transform/cli
 ```
 
