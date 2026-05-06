@@ -3,7 +3,17 @@ import numpy as np
 from tqdm import tqdm
 from time import time
 import random
+from contextlib import nullcontext
 from GLOBALS import patch_sizes
+
+
+def _autocast(device, dtype=torch.float16):
+    """Return a CUDA autocast context manager (defaulting to fp16), or a no-op
+    context manager when running on CPU. Used to run model forward passes in
+    mixed precision without changing model weights."""
+    if torch.device(device).type == 'cuda':
+        return torch.autocast(device_type='cuda', dtype=dtype)
+    return nullcontext()
 
 def expand_patches(down, patch_size=16):
     """
@@ -346,6 +356,10 @@ def get_pixel_features_diff3f(
 def get_pixel_features_radio(device, radio_model, image_processor, imgs, H, W, normalize=True,
                               batch_size=10, half=True, debug=False, resize=None,
                               compute_variance=False, compute_cosine=False, patchmask=None):
+    """Returns a list of patch-resolution RADIO feature tensors with shape
+    ``(A_i, H/patch, W/patch, C)`` on CPU. ``variances`` (if requested) are
+    returned at patch resolution.
+    """
     model = radio_model
 
     do_resize = resize is not None
@@ -356,144 +370,102 @@ def get_pixel_features_radio(device, radio_model, image_processor, imgs, H, W, n
                                    input_data_format="channels_last").pixel_values
     pixel_values = pixel_values.to(device)
 
-    from tqdm import tqdm
-
     patch_size = patch_sizes['radio']
-    grid = arange_pixels((H, W), invert_y_axis=False)[0].to(device).reshape(1, H, W, 2).half()
-    grid = grid.repeat(len(imgs), 1, 1, 1)
-
-    ### Batch all the renders together ###
-    # imgs = imgs[..., :3].permute(0, 3, 1, 2)
 
     print(f"Getting RADIO features for {imgs.shape} images ...")
-
-    import time
-    t0 = time.time()
+    t0 = time()
 
     features = []
     variances = []
     cosines = []
     for i in tqdm(range(0, len(imgs), batch_size)):
-        with torch.no_grad():
+        with _autocast(device):
             summary, batch_features = model(pixel_values[i:i + batch_size])
 
-            h, w = int(imgs.shape[1] / patch_size), int(imgs.shape[2] / patch_size)
-            dim = batch_features.shape[-1]
-            batch_features = batch_features.reshape(-1, h, w, dim)
+        h = int(imgs.shape[1] / patch_size)
+        w = int(imgs.shape[2] / patch_size)
+        dim = batch_features.shape[-1]
+        batch_features = batch_features.reshape(-1, h, w, dim)
 
-            # NOTE: Features are NOT normalized
-            if normalize:
-                batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
+        # NOTE: Features are NOT pre-normalized.
+        if normalize:
+            batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
 
-            if half:
-                batch_features = batch_features.half()
-            else:
-                batch_features = batch_features.float()
+        if half:
+            batch_features = batch_features.half()
+        else:
+            batch_features = batch_features.float()
 
-            # Choose LR vs TD vs None for the pixel wiping based on threshold for gap (high gap = strong need for pixel mask)
-            # Pixel wiping: use both depths & occupancies (choose starting side for the wipe and ending side determines the baseline depth)
-            if compute_cosine and patchmask is not None:
-                batch_distances = neighbor_cosine(batch_features, patchmask[i:i+batch_size].to(device))
-                cosines.append(batch_distances)
+        if compute_cosine and patchmask is not None:
+            batch_distances = neighbor_cosine(batch_features, patchmask[i:i+batch_size].to(device))
+            cosines.append(batch_distances)
 
-            if compute_variance and patchmask is not None:
-                batch_variance = neighbor_variance_8ring(batch_features, patchmask[i:i+batch_size].to(device))
-
-                # Assign variance to patches
-                batch_variance = expand_patches(batch_variance, patch_size=patch_size)
-
-                # variance = torch.nn.functional.interpolate(
-                #     variance.unsqueeze(1),
-                #     size=(H, W),
-                #     mode='bilinear',
-                #     antialias=True,
-                # )
-                variances.append(batch_variance)
-
-            # Upsample features to original image size
-            batch_features = expand_patches(batch_features, patch_size=patch_size)
+        if compute_variance and patchmask is not None:
+            batch_variance = neighbor_variance_8ring(batch_features, patchmask[i:i+batch_size].to(device))
+            variances.append(batch_variance.cpu())
 
         features.append(batch_features.cpu())
 
     if debug:
-        print(f"Total time taken for RADIO features: {time.time() - t0:.2f} seconds")
+        print(f"Total time taken for RADIO features: {time() - t0:.2f} seconds")
 
     if compute_variance and compute_cosine and patchmask is not None:
         cosines = torch.cat(cosines, dim=0).cpu()
         variances = torch.cat(variances, dim=0).cpu()
-
         return features, cosines, variances
-
     elif compute_variance and patchmask is not None:
         variances = torch.cat(variances, dim=0).cpu()
         return features, variances
-
     elif compute_cosine and patchmask is not None:
         cosines = torch.cat(cosines, dim=0).cpu()
-
         return features, cosines
-
     else:
         return features
 
 @torch.no_grad
 def get_pixel_features_dino(device, dino_model, imgs, H, W, normalize=True,
                               batch_size=10, half=True, debug=False):
-    from tqdm import tqdm
+    """Returns a list of patch-resolution feature tensors with shape
+    ``(A_i, H/patch, W/patch, C)`` on CPU.
+
+    Replicate-patch upsampling to the original image resolution is *deferred*
+    to the consumer (which can index ``chunk[b, h_pix // ph, w_pix // pw]``);
+    this avoids materializing a ~``patch**2`` larger upsampled tensor per chunk.
+    """
     from torchvision import transforms as tfs
 
-    transform = tfs.Compose(
-        [
-            # NOTE: This is the highest resolution it was finetuned at. dinov2 does not do well at higher res.
-            # tfs.Resize((518, 518)),
-            # tfs.ToTensor(),
-            tfs.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
-        ]
-    )
+    transform = tfs.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
 
     patch_size = patch_sizes['dino2']
-    grid = arange_pixels((H, W), invert_y_axis=False)[0].to(device).reshape(1, H, W, 2).half()
-    grid = grid.repeat(len(imgs), 1, 1, 1)
-
-    ### Batch all the renders together ###
-    # features = torch.zeros(
-    #         (len(imgs), H, W, 1536), device="cpu",
-    #         dtype=torch.float16 if half else torch.float32,
-    #         )
-
     imgs = imgs[..., :3].permute(0, 3, 1, 2)
 
     print(f"Getting DINO features for {imgs.shape} images ...")
-
-    import time
-    t0 = time.time()
+    t0 = time()
 
     features = []
     for i in tqdm(range(0, len(imgs), batch_size)):
-        with torch.no_grad():
-            batch_imgs = transform(imgs[i:i + batch_size])
-            # NOTE: This is the same as running forward_features() and extracting the patch tokens!!
+        batch_imgs = transform(imgs[i:i + batch_size])
+        with _autocast(device):
+            # Equivalent to forward_features() + extracting patch tokens.
             batch_features = dino_model.get_intermediate_layers(batch_imgs, n=1)[0]
 
-            if half:
-                batch_features = batch_features.half()
-            else:
-                batch_features = batch_features.float()
+        h = int(batch_imgs.shape[2] / patch_size)
+        w = int(batch_imgs.shape[3] / patch_size)
+        dim = batch_features.shape[-1]
+        batch_features = batch_features.reshape(-1, h, w, dim)
 
-            h, w = int(batch_imgs.shape[2] / patch_size), int(batch_imgs.shape[3] / patch_size)
-            dim = batch_features.shape[-1]
-            batch_features = batch_features.reshape(-1, h, w, dim)
+        if normalize:
+            batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
 
-            if normalize:
-                batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
+        if half:
+            batch_features = batch_features.half()
+        else:
+            batch_features = batch_features.float()
 
-            # Upsample features to original image size
-            batch_features = expand_patches(batch_features.cpu(), patch_size=patch_size)
-
-        features.append(batch_features)
+        features.append(batch_features.cpu())
 
     if debug:
-        print(f"Total time taken for DINO features: {time.time() - t0:.2f} seconds")
+        print(f"Total time taken for DINO features: {time() - t0:.2f} seconds")
 
     return features
 
@@ -502,7 +474,11 @@ def get_pixel_features_dino3(device, dino_model, imgs, H, W, normalize=True,
                               batch_size=10, half=True, debug=False, resize=None,
                               compute_variance=False, compute_cosine=False,
                               patchmask=None):
-    from tqdm import tqdm
+    """Returns a list of patch-resolution DINOv3 feature tensors with shape
+    ``(A_i, H/patch, W/patch, C)`` on CPU. ``variances`` (if requested) are
+    also returned at patch resolution; the consumer is responsible for any
+    upsample.
+    """
     from torchvision import transforms as tfs
 
     # NOTE: dinov3 should be stable at high resolutions without resizing
@@ -512,77 +488,66 @@ def get_pixel_features_dino3(device, dino_model, imgs, H, W, normalize=True,
     transform = tfs.Compose(transform)
 
     patch_size = patch_sizes['dino3']
-    # grid = arange_pixels((H, W), invert_y_axis=False)[0].to(device).reshape(1, H, W, 2).half()
-    # grid = grid.repeat(len(imgs), 1, 1, 1)
-
-    ### Batch all the renders together ###
     imgs = imgs[..., :3].permute(0, 3, 1, 2)
 
     print(f"Getting DINO v3 features for {imgs.shape} images ...")
-
-    import time
-    t0 = time.time()
+    t0 = time()
 
     features = []
     variances = []
     cosines = []
     for i in tqdm(range(0, len(imgs), batch_size)):
-        with torch.no_grad():
-            batch_imgs = transform(imgs[i:i + batch_size])
-            # NOTE: This is the same as running forward_features() and extracting the patch tokens!!
+        batch_imgs = transform(imgs[i:i + batch_size])
+        with _autocast(device):
             batch_features = dino_model.get_intermediate_layers(batch_imgs, n=1)[0]
 
-            h, w = int(batch_imgs.shape[2] / patch_size), int(batch_imgs.shape[3] / patch_size)
-            dim = batch_features.shape[-1]
-            batch_features = batch_features.reshape(-1, h, w, dim)
+        h = int(batch_imgs.shape[2] / patch_size)
+        w = int(batch_imgs.shape[3] / patch_size)
+        dim = batch_features.shape[-1]
+        batch_features = batch_features.reshape(-1, h, w, dim)
 
-            if normalize:
-                batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
+        if normalize:
+            batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
 
-            if half:
-                batch_features = batch_features.half()
-            else:
-                batch_features = batch_features.float()
+        if half:
+            batch_features = batch_features.half()
+        else:
+            batch_features = batch_features.float()
 
-            if compute_cosine and patchmask is not None:
-                batch_distances = neighbor_cosine(batch_features, patchmask[i:i+batch_size])
-                cosines.append(batch_distances)
+        if compute_cosine and patchmask is not None:
+            batch_distances = neighbor_cosine(batch_features, patchmask[i:i+batch_size])
+            cosines.append(batch_distances)
 
-            if compute_variance and patchmask is not None:
-                batch_variance = neighbor_variance_8ring(batch_features, patchmask[i:i+batch_size])
-                batch_variance = expand_patches(batch_variance.cpu(), patch_size=patch_size)
-                variances.append(batch_variance)
+        if compute_variance and patchmask is not None:
+            batch_variance = neighbor_variance_8ring(batch_features, patchmask[i:i+batch_size])
+            variances.append(batch_variance.cpu())
 
-            # Upsample features to original image size
-            batch_features = expand_patches(batch_features.cpu(), patch_size=patch_size)
-
-        features.append(batch_features)
+        features.append(batch_features.cpu())
 
     if debug:
-        print(f"Total time taken for DINO v3 features: {time.time() - t0:.2f} seconds")
+        print(f"Total time taken for DINO v3 features: {time() - t0:.2f} seconds")
 
-    # features = torch.cat(features, dim=0)
     if compute_variance and compute_cosine and patchmask is not None:
         cosines = torch.cat(cosines, dim=0).cpu()
         variances = torch.cat(variances, dim=0).cpu()
-
         return features, cosines, variances
-
     elif compute_variance and patchmask is not None:
         variances = torch.cat(variances, dim=0).cpu()
         return features, variances
-
     elif compute_cosine and patchmask is not None:
         cosines = torch.cat(cosines, dim=0).cpu()
-
         return features, cosines
-
     else:
         return features
 
 @torch.no_grad
 def get_pixel_features_sam(device, sam_model, imgs, normalize=True,
                             batch_size=5, half=True, debug=False,):
+    """Returns a list of patch-resolution SAM feature tensors with shape
+    ``(A_i, h_grid, w_grid, C)`` on CPU, where ``h_grid = w_grid = 64`` for
+    SAM's image encoder. The consumer is responsible for any upsample to the
+    original image resolution.
+    """
     target_length = sam_model.model.image_encoder.img_size
 
     imgs = imgs[..., :3].permute(0, 3, 1, 2) # [B, C, H, W]
@@ -597,25 +562,21 @@ def get_pixel_features_sam(device, sam_model, imgs, normalize=True,
     processed_renderings = processed_renderings.contiguous()
     processed_renderings = sam_model.model.preprocess(processed_renderings)
 
-    from tqdm import tqdm
-    featuredim = 256
     view_features = []
 
     print(f"Getting SAM features for {processed_renderings.shape} images ...")
     t0 = time()
     for i in tqdm(range(0, processed_renderings.shape[0], batch_size)):
-        with torch.no_grad():
+        with _autocast(device):
             batch_features = sam_model.model.image_encoder(processed_renderings[i:i+batch_size])
 
-            if half:
-                batch_features = batch_features.half()
-            else:
-                batch_features = batch_features.float()
+        if normalize:
+            batch_features = torch.nn.functional.normalize(batch_features, dim=1)
 
-            batch_features = expand_feature_map_nchw(batch_features, oldh, oldw)
-
-            if normalize:
-                batch_features = torch.nn.functional.normalize(batch_features, dim=1)
+        if half:
+            batch_features = batch_features.half()
+        else:
+            batch_features = batch_features.float()
 
         view_features.append(batch_features.permute(0, 2, 3, 1).cpu())
 
@@ -628,41 +589,48 @@ def get_pixel_features_sam(device, sam_model, imgs, normalize=True,
 def get_pixel_features_clip(device, clip_model, imgs, normalize=True,
                             clip_conv_layer_weights = [0,0,1.,1.,0],
                             batch_size=20, half=True, debug=False,):
-    imgs = imgs[..., :3].permute(0, 3, 1, 2)
+    """Returns a list of patch-resolution CLIP feature tensors with shape
+    ``(A_i, gh, gw, C)`` on CPU, where ``gh = gw = imgs.shape[-1] // patch``.
 
-    from tqdm import tqdm
+    All weighted ViT layers share a common ``gh x gw`` patch grid, so we sum
+    weighted layer outputs at grid resolution; the consumer replicates patches
+    to pixel resolution as needed.
+    """
     import math
+
+    imgs = imgs[..., :3].permute(0, 3, 1, 2)
 
     print(f"Getting CLIP features for {imgs.shape} images ...")
     view_features = []
 
     t0 = time()
     for i in tqdm(range(0, imgs.shape[0], batch_size)):
-        with torch.no_grad():
+        with _autocast(device):
             batch_fc_features, batch_conv_features = clip_model(imgs[i:i+batch_size])
 
-            # Aggregate the features
-            # NOTE: FC features don't matter
-            batch_features = None
-            for j, weight in enumerate(clip_conv_layer_weights):
-                if weight > 0:
-                    # NOTE: first feature is the CLS token
-                    batch_conv_feature = batch_conv_features[j][:, 1:, :]
-                    gh = gw = int(math.sqrt(batch_conv_feature.shape[1]))
-                    batch_conv_feature = batch_conv_feature.reshape(
-                        len(batch_conv_feature), gh, gw, batch_conv_feature.shape[-1]
-                    ).permute(0, 3, 1, 2).contiguous()
-                    batch_conv_feature = expand_feature_map_nchw(
-                        batch_conv_feature, imgs.shape[2], imgs.shape[3]
-                    )
-                    if batch_features is None:
-                        batch_features = batch_conv_feature * weight
-                    else:
-                        batch_features = batch_features + batch_conv_feature * weight
+        # NOTE: FC features don't matter; aggregate weighted patch-token maps.
+        batch_features = None
+        for j, weight in enumerate(clip_conv_layer_weights):
+            if weight <= 0:
+                continue
+            # NOTE: first token is the CLS token; skip it.
+            batch_conv_feature = batch_conv_features[j][:, 1:, :]
+            gh = gw = int(math.sqrt(batch_conv_feature.shape[1]))
+            batch_conv_feature = batch_conv_feature.reshape(
+                len(batch_conv_feature), gh, gw, batch_conv_feature.shape[-1]
+            ).permute(0, 3, 1, 2).contiguous()
+            if batch_features is None:
+                batch_features = batch_conv_feature * weight
+            else:
+                batch_features = batch_features + batch_conv_feature * weight
 
-            # Upsample
-            if normalize:
-                batch_features = torch.nn.functional.normalize(batch_features, dim=-1)
+        if normalize:
+            batch_features = torch.nn.functional.normalize(batch_features, dim=1)
+
+        if half:
+            batch_features = batch_features.half()
+        else:
+            batch_features = batch_features.float()
 
         view_features.append(batch_features.permute(0, 2, 3, 1).cpu())
 
@@ -675,15 +643,18 @@ def get_pixel_features_clip(device, clip_model, imgs, normalize=True,
 def get_pixel_features_sam2(device, sam2_model, imgs, normalize=True,
                             batch_size=20, half=True, debug=False,
                             concat_hr=False,):
-    """
-    Dense features per original-image pixel via patch replication from SAM2 backbone maps.
+    """Returns a list of patch-resolution SAM2 feature tensors with shape
+    ``(A_i, h_grid, w_grid, C)`` on CPU. Each rendered image height/width must
+    be divisible by ``h_grid``/``w_grid`` so the consumer can replicate
+    patches back to pixel resolution via integer division.
 
-    Each image height/width must be divisible by the finest backbone grid size on that path
-    (64px without ``concat_hr``; 256px with ``concat_hr``, since high-res feats include a 256 grid).
-    This matches SAM2 assuming a square ``Resize`` preprocessing of ``image_size`` (e.g. 1024).
+    Without ``concat_hr`` we return SAM2's ``image_embed`` at its native grid
+    (1/16 of the SAM2 internal image size, e.g. 64x64 for 1024 input). With
+    ``concat_hr`` we upsample ``image_embed`` and the coarser of the two
+    ``high_res_feats`` to the finest of the three grids (typically 256x256)
+    and concatenate along channels - much cheaper than the previous full
+    ``tgt_h x tgt_w`` upsample.
     """
-    from tqdm import tqdm
-
     np_renderings = (imgs.cpu().numpy() * 255).astype(np.uint8)[..., :3]
     np_renderings = [np_renderings[i] for i in range(np_renderings.shape[0])]
 
@@ -692,25 +663,33 @@ def get_pixel_features_sam2(device, sam2_model, imgs, normalize=True,
     for i in tqdm(range(0, len(np_renderings), batch_size)):
         batch = np_renderings[i:i+batch_size]
 
-        # NOTE: This is a hack to get the model to work
+        # SAM2 requires inference_mode + bf16 autocast for its forward pass.
         with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             sam2_model.set_image_batch(batch)
 
-        tgt_h, tgt_w = batch[0].shape[0], batch[0].shape[1]
         image_embed = sam2_model._features['image_embed']
-        high_res_feats = sam2_model._features['high_res_feats']
-        image_embed = expand_feature_map_nchw(image_embed, tgt_h, tgt_w)
 
         if concat_hr:
-            hr0 = expand_feature_map_nchw(high_res_feats[0], tgt_h, tgt_w)
-            hr1 = expand_feature_map_nchw(high_res_feats[1], tgt_h, tgt_w)
+            hr0 = sam2_model._features['high_res_feats'][0]
+            hr1 = sam2_model._features['high_res_feats'][1]
+            # Pick the finest of the three grids and upsample the coarser maps to it.
+            target_h = max(image_embed.shape[-2], hr0.shape[-2], hr1.shape[-2])
+            target_w = max(image_embed.shape[-1], hr0.shape[-1], hr1.shape[-1])
+            if image_embed.shape[-2:] != (target_h, target_w):
+                image_embed = expand_feature_map_nchw(image_embed, target_h, target_w)
+            if hr0.shape[-2:] != (target_h, target_w):
+                hr0 = expand_feature_map_nchw(hr0, target_h, target_w)
+            if hr1.shape[-2:] != (target_h, target_w):
+                hr1 = expand_feature_map_nchw(hr1, target_h, target_w)
             image_embed = torch.cat([image_embed, hr0, hr1], dim=1)
 
         if normalize:
-            image_embed = torch.nn.functional.normalize(image_embed, dim=-1)
+            image_embed = torch.nn.functional.normalize(image_embed, dim=1)
 
         if half:
             image_embed = image_embed.half()
+        else:
+            image_embed = image_embed.float()
 
         view_features.append(image_embed.permute(0, 2, 3, 1).cpu())
 

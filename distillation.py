@@ -133,8 +133,7 @@ def barycentric_distillation(
     imgw: int = 512,
     nviews: int = 16,
     viewtype: str = "default",
-    flattenviews: bool = False,
-    batchsize: int = 5,
+    batchsize: int = 10000,
     viewbatchsize: int = 16,
     featurebatchsize: int = 2,
     lr: float = 1e-3,
@@ -184,8 +183,8 @@ def barycentric_distillation(
         Debug dumps and timing prints.
     no_cache:
         If True, avoids writing cached intermediates to disk (saves disk space).
-    flattenviews, batchsize:
-        Dataset/training batching behavior.
+    batchsize:
+        Number of (flattened) training points sampled per optimization step.
     lr, iters, subsetepoch:
         Training hyperparameters.
     noiseradius, noisen:
@@ -221,8 +220,8 @@ def barycentric_distillation(
         clear_directory(savedir)
 
     if os.path.exists(os.path.join(savedir, "final_encoder.pth")):
-        print("Final encoder already exists. Existing...")
-        exit(0)
+        print("Final encoder already exists. Skipping.")
+        return None, None
 
     cachedir = os.path.join(savedir, "cache")
     Path(cachedir).mkdir(parents=True, exist_ok=True)
@@ -272,50 +271,6 @@ def barycentric_distillation(
         texturedir=texturedir,
     )
 
-    # ==================== Dataset class ====================
-    from torch.utils.data import Dataset, DataLoader
-
-    class FeatureDataset(Dataset):
-        def __init__(self, features, positions, masks=None, flatten=False, featurebatchsize=None):
-            """features: V-list of shape [A, H, W, C] where V*A = B (A is featurebatchsize)
-            positions: [B, H, W, 3]
-            masks: [B, H, W], Optional
-            flatten: whether to flatten the views
-            """
-            self.featurebatchsize = featurebatchsize
-            self.flatten = flatten
-            if self.flatten:
-                features = torch.cat(features, dim=0)
-                self.features = features.view(-1, features.shape[-1])
-                self.positions = positions.view(-1, 3)
-                if masks is not None:
-                    self.masks = masks.view(-1)
-                    self.features = self.features[self.masks]
-                    self.positions = self.positions[self.masks]
-                else:
-                    self.masks = None
-            else:
-                self.features = features
-                self.positions = positions
-                self.masks = masks
-
-        def __len__(self):
-            return len(self.positions)
-
-        def __getitem__(self, idx):
-            if self.flatten:
-                if self.masks is not None:
-                    return self.features[idx], self.positions[idx], self.masks[idx]
-                else:
-                    return self.features[idx], self.positions[idx], torch.tensor(True)
-            else:
-                view_bi = idx // self.featurebatchsize
-                batch_bi = idx % self.featurebatchsize
-                if self.masks is not None:
-                    return self.features[view_bi][batch_bi], self.positions[idx], self.masks[idx]
-                else:
-                    return self.features[view_bi][batch_bi], self.positions[idx], torch.tensor(True)
-
     # ==================== MLP Training Setup ====================
     H = imgh
     W = imgw
@@ -328,7 +283,8 @@ def barycentric_distillation(
         if not os.path.exists(os.path.join(cachedir, f"renders.pt")) or \
             not os.path.exists(os.path.join(cachedir, f"pixel_coords.pt")) or \
             not os.path.exists(os.path.join(cachedir, f"depth.pt")) or \
-            not os.path.exists(os.path.join(cachedir, f"pixel_mask.pt")):
+            not os.path.exists(os.path.join(cachedir, f"pixel_mask.pt")) or \
+            not os.path.exists(os.path.join(cachedir, f"xyz.pt")):
 
             prerendertime = time.time()
 
@@ -356,28 +312,42 @@ def barycentric_distillation(
                 rendertime = time.time() - prerendertime
                 print(f"Rendering complete in {rendertime} seconds")
 
+            # Compute the boolean visibility mask once and reuse for: (1) gathering
+            # valid xyz, and (2) the (b, h, w) indices used to gather flat features
+            # after extraction.
+            flat_mask = pixel_mask.bool()
+            xyz = pixel_coords[flat_mask].cpu().contiguous()
+
             if not no_cache:
                 torch.save(batched_renderings.cpu(), os.path.join(cachedir, f"renders.pt"))
                 torch.save(depth.cpu(), os.path.join(cachedir, f"depth.pt"))
                 torch.save(pixel_mask.cpu(), os.path.join(cachedir, f"pixel_mask.pt"))
                 torch.save(pixel_coords.cpu(), os.path.join(cachedir, f"pixel_coords.pt"))
+                torch.save(xyz, os.path.join(cachedir, f"xyz.pt"))
                 if use_normal_map and normal_batched_renderings is not None:
                     torch.save(normal_batched_renderings.cpu(), os.path.join(cachedir, f"normal_renders.pt"))
 
-            # Move to CPU to save memory
-            depth = depth.cpu()
-            mesh_vertices = mesh_vertices.detach().cpu()
-            mesh_faces = mesh_faces.detach().cpu()
-            pixel_mask = pixel_mask.detach().cpu()
-            pixel_coords = pixel_coords.detach().cpu()
+            # mesh_vertices/faces are already CPU from load_mesh; no work needed.
+            # pixel_coords is no longer needed (xyz is the masked subset);
+            # depth is only consumed by extractors with needs_normal_map=True.
+            pixel_mask = pixel_mask.cpu()
+            del pixel_coords, flat_mask
+            if use_normal_map:
+                depth = depth.cpu()
+            else:
+                depth = None
 
             gc.collect()
             torch.cuda.empty_cache()
         else:
             batched_renderings = torch.load(os.path.join(cachedir, f"renders.pt"), map_location=device, weights_only=True)
-            depth = torch.load(os.path.join(cachedir, f"depth.pt"), map_location=device, weights_only=True)
-            pixel_coords = torch.load(os.path.join(cachedir, f"pixel_coords.pt"), map_location='cpu', weights_only=True)
             pixel_mask = torch.load(os.path.join(cachedir, f"pixel_mask.pt"), map_location='cpu', weights_only=True)
+            xyz = torch.load(os.path.join(cachedir, f"xyz.pt"), map_location='cpu', weights_only=True)
+
+            # depth is only consumed by extractors that need normal maps.
+            depth = None
+            if use_normal_map:
+                depth = torch.load(os.path.join(cachedir, f"depth.pt"), map_location=device, weights_only=True)
 
             normal_batched_renderings = None
             if use_normal_map and os.path.exists(os.path.join(cachedir, f"normal_renders.pt")):
@@ -396,25 +366,31 @@ def barycentric_distillation(
                 img.save(os.path.join(renderdir, f"render_{i:02}.png"))
 
         # ==================== SAM Mask Generation ====================
+        # Skip SAM mask generation if the view_features cache already exists — SAM
+        # refinement is already baked into cached features.
         if use_sam > 0 and not os.path.exists(os.path.join(cachedir, f"view_features.pt")):
             print("Generating segmentation masks using SAM ...")
+            from sam_utils import generate_sam_masks
+            from GLOBALS import patch_sizes
+
             if timing:
                 presamtime = time.time()
 
-                from sam_utils import generate_sam_masks
-                from GLOBALS import patch_sizes
+            batched_sam = generate_sam_masks(
+                batched_renderings, H, W, patch_sizes[model], device,
+                debug=debug, debug_dir=cachedir,
+            )
 
-                batched_sam = generate_sam_masks(
-                    batched_renderings, H, W, patch_sizes[model], device,
-                    debug=debug, debug_dir=cachedir,
-                )
-
-                if timing:
-                    samtime = time.time() - presamtime
-                    print(f"SAM segmentation completed in {samtime:02f} seconds")
+            if timing:
+                samtime = time.time() - presamtime
+                print(f"SAM segmentation completed in {samtime:02f} seconds")
 
         # ==================== Feature Extraction ====================
-        if not os.path.exists(os.path.join(cachedir, f"view_features.pt")):
+        # Cached features are stored *flat* — i.e. only valid (mask=True) pixels are kept,
+        # aligned with the flat ``xyz`` tensor of training positions.
+        view_features_path = os.path.join(cachedir, f"view_features.pt")
+
+        if not os.path.exists(view_features_path):
             print("Preprocessing all the renders")
             prefeaturetime = time.time()
 
@@ -442,11 +418,22 @@ def barycentric_distillation(
             view_features = extractor.get_pixel_features(
                 batched_renderings, H, W, **feat_kwargs
             )
+            
+            extractor.cleanup()
 
-            # Apply SAM feature refinement if applicable
+            # Apply SAM feature refinement if applicable. Because
+            # ``view_features`` is patch-resolution, the refinement
+            # materializes the full-resolution feature map (via
+            # ``repeat_interleave``) and runs the original pixel-level
+            # outlier replacement on it. The function returns the
+            # *full-resolution* view_features list with SAM corrections
+            # baked in, which the gather/flatten code below then masks
+            # down to flat per-pixel features (the patch-resolution
+            # gather works uniformly for full-res chunks since
+            # ``ph = H // h_patch = 1`` when ``h_patch = H``).
             if use_sam > 0 and extractor.supports_sam_refinement:
                 from sam_utils import apply_sam_feature_refinement
-                apply_sam_feature_refinement(
+                sam_view_features = apply_sam_feature_refinement(
                     view_features, batched_sam, pixel_mask,
                     threshold=use_sam,
                     featurebatchsize=view_features[0].shape[0],
@@ -455,12 +442,105 @@ def barycentric_distillation(
                     debug_dir=cachedir,
                 )
 
-            extractor.cleanup()
+                # Flatten by walking the (now full-resolution) chunks and
+                # masking each with its slice of ``pixel_mask``. We
+                # pre-allocate the flat output buffer and stream chunk by
+                # chunk, freeing each upsampled chunk as soon as it is
+                # consumed - so we never hold both the upsampled list and a
+                # concatenated copy at the same time.
+                #
+                # Per-chunk masking preserves global row-major enumeration
+                # over ``(B, H, W)``: applying ``pixel_mask[chunk_start:chunk_end]``
+                # to each chunk and concatenating the per-chunk row counts is
+                # identical to applying the full mask to a hypothetical
+                # ``cat()``ed tensor, which matches the order of
+                # ``xyz = pixel_coords[pixel_mask.bool()]``.
+                pixel_mask_bool = pixel_mask.bool()
+                n_valid = int(pixel_mask_bool.sum().item())
+                feat_dim = sam_view_features[0].shape[-1]
+                flat_features = torch.empty(
+                    (n_valid, feat_dim), dtype=sam_view_features[0].dtype
+                )
+
+                chunk_start = 0
+                flat_off = 0
+                for i in range(len(sam_view_features)):
+                    chunk = sam_view_features[i]
+                    chunk_end = chunk_start + chunk.shape[0]
+                    chunk_flat = chunk[pixel_mask_bool[chunk_start:chunk_end]]
+                    n_chunk = chunk_flat.shape[0]
+                    flat_features[flat_off:flat_off + n_chunk] = chunk_flat
+                    flat_off += n_chunk
+                    chunk_start = chunk_end
+                    sam_view_features[i] = None
+                    del chunk, chunk_flat
+
+                assert flat_off == n_valid, (
+                    f"Flat fill mismatch: wrote {flat_off} rows but expected {n_valid}"
+                )
+
+                del sam_view_features, pixel_mask_bool
+                view_features = flat_features
+                del flat_features
+            else:
+                # Drop background/invalid pixels and flatten to [N_valid, C] without ever
+                # cat()/stack()ing the (potentially huge) per-chunk feature tensors.
+                #
+                # ``view_features`` is now stored at *patch resolution*: each chunk has
+                # shape ``(A_i, h_patch, w_patch, C)`` rather than ``(A_i, H, W, C)``,
+                # which avoids materializing a ~``patch**2`` larger upsampled tensor
+                # per chunk (e.g. ~196x for DINOv2 with patch=14). We replicate the
+                # per-pixel features on the fly here by integer-dividing the pixel
+                # indices by the patch size: pixel ``(h, w)`` reads from patch
+                # ``(h // ph, w // pw)``.
+                #
+                # Order matches ``xyz = pixel_coords[pixel_mask.bool()]``: both
+                # ``tensor[bool_mask]`` and ``torch.where(bool_mask)`` enumerate in
+                # row-major order over [B, H, W], so the i-th feature row aligns
+                # with ``xyz[i]``.
+                first_chunk = view_features[0]
+                h_patch = first_chunk.shape[1]
+                w_patch = first_chunk.shape[2]
+                assert H % h_patch == 0 and W % w_patch == 0, (
+                    f"Patch grid {h_patch}x{w_patch} does not evenly tile {H}x{W}; "
+                    f"render H/W must be a multiple of the model's patch size."
+                )
+                ph = H // h_patch
+                pw = W // w_patch
+
+                b_idx, h_idx, w_idx = torch.where(pixel_mask.bool())
+                patch_h_idx = h_idx // ph
+                patch_w_idx = w_idx // pw
+                del h_idx, w_idx
+                n_valid = b_idx.numel()
+                feat_dim = first_chunk.shape[-1]
+                flat_features = torch.empty(
+                    (n_valid, feat_dim), dtype=first_chunk.dtype
+                )
+
+                chunk_start = 0
+                # Iterate by index so we can release each chunk as soon as it is consumed,
+                # keeping CPU peak ~= one chunk + flat_features instead of the entire list.
+                for i in range(len(view_features)):
+                    chunk = view_features[i]
+                    chunk_end = chunk_start + chunk.shape[0]
+                    sel = torch.nonzero(
+                        (b_idx >= chunk_start) & (b_idx < chunk_end),
+                        as_tuple=False,
+                    ).squeeze(1)
+                    if sel.numel() > 0:
+                        local_b = b_idx[sel] - chunk_start
+                        flat_features[sel] = chunk[local_b, patch_h_idx[sel], patch_w_idx[sel]]
+                    chunk_start = chunk_end
+                    view_features[i] = None
+                    del chunk
+
+                del view_features, b_idx, patch_h_idx, patch_w_idx, first_chunk
+                view_features = flat_features
+                del flat_features
 
             # Clean up rendering data
-            del batched_renderings
-            if 'depth' in dir():
-                del depth
+            del batched_renderings, depth
 
             if timing:
                 featuretime = time.time() - prefeaturetime
@@ -468,18 +548,28 @@ def barycentric_distillation(
 
             gc.collect()
             torch.cuda.empty_cache()
-            
-            if not no_cache: 
-                torch.save(view_features, os.path.join(cachedir, f"view_features.pt"), map_location='cpu')
-                print(f"Saved view features to {cachedir}")
+
+            if not no_cache:
+                torch.save(view_features, view_features_path)
+                print(f"Saved flat view features to {view_features_path}")
         else:
             preloadtime = time.time()
-            view_features = torch.load(os.path.join(cachedir, f"view_features.pt"), map_location='cpu', weights_only=True)
-            print(f"Loaded cached view features from {cachedir}")
-
+            view_features = torch.load(view_features_path, map_location='cpu', weights_only=True)
+            print(f"Loaded cached view features from {view_features_path}")
             if debug:
                 t2 = (time.time() - preloadtime) / 60
                 print(f"Time to load view features: {t2} minutes")
+
+        # pixel_mask is no longer needed once features are flat; keep it on disk only.
+        del pixel_mask
+        gc.collect()
+
+        assert view_features.shape[0] == xyz.shape[0], (
+            f"Flattened feature/xyz counts disagree: "
+            f"{view_features.shape[0]} vs {xyz.shape[0]}"
+        )
+        print(f"Training points (valid pixels): {view_features.shape[0]}, "
+              f"feature dim: {view_features.shape[1]}")
 
         if timing:
             pretraintime = time.time()
@@ -488,14 +578,20 @@ def barycentric_distillation(
         mesh_vertices = mesh_vertices.cpu()
         mesh_faces = mesh_faces.cpu()
 
-        dataset = FeatureDataset(view_features, pixel_coords.detach().cpu(), pixel_mask.detach().cpu(),
-                                 flatten=flattenviews, featurebatchsize=featurebatchsize)
-        dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True,
-                                pin_memory=True, num_workers=2)
+        # `view_features` is a flat [N_valid, C] CPU tensor and `xyz` is the aligned
+        # [N_valid, 3] CPU tensor of valid training positions. `batchsize` counts
+        # flattened training points per optimization step.
+        n_total_points = view_features.shape[0]
+        if subsetepoch > 0:
+            n_iter_points = max(1, int(np.floor(n_total_points * subsetepoch)))
+            print(f"[subsetepoch] Sampling {n_iter_points} / {n_total_points} points "
+                  f"({subsetepoch*100:.1f}%) per iter, batchsize={batchsize}")
+        else:
+            n_iter_points = n_total_points
 
         from featuremlp import FeatureMLP
 
-        ndim = view_features[0].shape[-1]
+        ndim = view_features.shape[-1]
         encoder = FeatureMLP(nlayers, width, out_dim=ndim, positional_encoding=positional_encoding,
                              sigma=sigma, normalize=normalizemlp).to(device)
 
@@ -515,49 +611,53 @@ def barycentric_distillation(
         from tqdm import tqdm
 
         for iteri in tqdm(range(startiter, iters)):
-            totloss = 0
+            # Random permutation over all valid points each iter; if subsetepoch > 0,
+            # take only the first `n_iter_points` of the permutation as this iter's subset.
+            perm = torch.randperm(n_total_points)[:n_iter_points]
 
-            # Subset dataloader if set
-            if subsetepoch > 0:
-                from torch.utils.data import DataLoader, Subset
-                dataset_size = len(dataset)
-                indices = list(range(dataset_size))
-                np.random.shuffle(indices)
-                subset_size = int(np.floor(dataset_size * subsetepoch))
-                subset_indices = indices[:subset_size]
-                random_subset = Subset(dataset, subset_indices)
-                subset_loader = DataLoader(random_subset, batch_size=batchsize, shuffle=False)
+            iter_features = None
+            iter_xyz = None
+            
+            # One large H2D copy per iter (instead of one per mini-batch).
+            iter_features = view_features[perm].to(device, non_blocking=True)
+            iter_xyz = xyz[perm].to(device, non_blocking=True)
 
-            for i, (gtfeatures, positions, masks) in enumerate(tqdm(subset_loader if subsetepoch > 0 else dataloader)):
-                gtfeatures = gtfeatures.view(-1, gtfeatures.shape[-1]).to(device, non_blocking=True)
-                positions = positions.view(-1, 3).to(device, non_blocking=True)
+            totloss_gpu = torch.zeros((), device=device, dtype=torch.float32)
+            n_batches = 0
 
-                if not flattenviews and masks.numel() > 1:
-                    masks = masks.view(-1).to(device, non_blocking=True)
-                    gtfeatures = gtfeatures[masks]
-                    positions = positions[masks]
+            for start in tqdm(range(0, n_iter_points, batchsize)):
+                end = min(start + batchsize, n_iter_points)
+                gtfeatures = iter_features[start:end]
+                positions = iter_xyz[start:end]
 
-                # Sample noise
                 if noisen > 0:
                     n = len(positions)
-                    # Sample 5D Gaussian noise, use 3 dims for spatial noise, all 5 for normalization
                     raw = torch.randn(n, noisen, 5, device=device)
-                    norm = raw.norm(dim=-1, keepdim=True) / noiseradius  # (n, noisen, 1)
-                    noise = raw[..., 2:] / norm  # use last 3 dims as spatial noise (n, noisen, 3)
+                    norm = raw.norm(dim=-1, keepdim=True) / noiseradius
+                    noise = raw[..., 2:] / norm
                     noisy_positions = positions.unsqueeze(1) + noise
                     positions = torch.cat([positions.unsqueeze(1), noisy_positions], dim=1).reshape(-1, 3)
                     gtfeatures = gtfeatures.repeat_interleave(noisen + 1, dim=0)
 
                 pred_features = encoder(positions)
-                batch_loss = torch.nn.MSELoss(reduction='sum')(pred_features, gtfeatures.float())
+                # Upcast targets to MLP dtype only when needed.
+                if gtfeatures.dtype != pred_features.dtype:
+                    gtfeatures = gtfeatures.to(pred_features.dtype)
+                batch_loss = torch.nn.functional.mse_loss(
+                    pred_features, gtfeatures, reduction='sum'
+                )
 
                 optim.zero_grad(set_to_none=True)
                 batch_loss.backward()
                 optim.step()
 
-                totloss += batch_loss.item()
+                # Accumulate on GPU; avoid a per-batch .item() sync.
+                totloss_gpu += batch_loss.detach()
+                n_batches += 1
 
-            totloss /= len(dataloader)
+            del iter_features, iter_xyz
+
+            totloss = (totloss_gpu / max(1, n_batches)).item()
             print(f"Iter {iteri} loss: {totloss}")
             loss_list.append(totloss)
 
@@ -609,9 +709,8 @@ def barycentric_distillation(
         with torch.no_grad():
             features = encoder(sample_points)
 
-        if not no_cache:
-            torch.save(features.detach().cpu(), os.path.join(savedir, f"{meshname}.pt"))
-            print(f"Saved features to {os.path.join(savedir, f'{meshname}.pt')}")
+        torch.save(features.detach().cpu(), os.path.join(savedir, f"{meshname}.pt"))
+        print(f"Saved features to {os.path.join(savedir, f'{meshname}.pt')}")
 
         # Plot the loss
         import matplotlib.pyplot as plt
@@ -701,19 +800,18 @@ if __name__ == "__main__":
 
     parse.add_argument("--nviews", type=int, default=24, help="total views to render (should be multiple of 3 for default viewtype)")
     parse.add_argument("--viewtype", type=str, choices={'default', 'fib'}, default='default', help="default view sampling or fibonacci")
-    parse.add_argument('--flattenviews', action="store_true", help='flatten the view features')
-    parse.add_argument("--batchsize", type=int, default=2, help="views to batch OR pixels to batch during feature optimization")
+    parse.add_argument("--batchsize", type=int, default=10000, help="number of (flattened) training points sampled per MLP optimization step")
     parse.add_argument("--viewbatchsize", type=int, default=16, help="number of views to batch for rendering")
     parse.add_argument("--featurebatchsize", type=int, default=2, help="number of views to batch for feature extraction")
     parse.add_argument("--lr", type=float, default=1e-3)
-    parse.add_argument("--iters", type=int, default=10)
+    parse.add_argument("--iters", type=int, default=20)
 
     ### Gaussian blurring
     parse.add_argument("--noiseradius", type=float, default=0.05, help="maximum radius for sampling outside of the vertex")
     parse.add_argument("--noisen", type=int, default=0, help="noise samples for every vertex")
 
     ### Subset epoch training
-    parse.add_argument('--subsetepoch', type=float, default=0, help="If > 0, will only train on a random subset of this fraction of the dataset every epoch.")
+    parse.add_argument('--subsetepoch', type=float, default=0.1, help="If > 0, randomly samples this fraction of all flattened training points each iter.")
 
     ### SAM feature reassignment
     parse.add_argument('--use_sam', type=float, default=0, help="SAM segmentation to fix feature bleeding. Value determines pixel features which are outliers from the cluster mode.")

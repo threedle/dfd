@@ -47,63 +47,65 @@ Outputs are saved to `outputs/crab/dinov2_vitg14_reg`, including the trained MLP
 ### Command Line Arguments
 Objs with texture coordinates can be rendered with texture using the `--texturedir` kwarg.
 
-High resolution meshes (>1m vertices) should be first downsampled before rendering by using the `--reduction` kwarg. This calls either GLTF-transform (for GLBs) or QEM decimation (other formats) under the hood. The distillation should take at most a few minutes for any choice of encoder/mesh, but for high resolution shapes the rendering can run into memory issues.
+High resolution meshes (>5m vertices) should be first downsampled before rendering by using the `--reduction` kwarg. This calls either GLTF-transform (for GLBs) or QEM decimation (other formats) under the hood. The distillation should take at most a few minutes for any choice of encoder/mesh, but for high resolution shapes the rendering can run into memory issues.
 
-`--use_sam` will refine the render feature maps by using SAM segmentation to identify areas where patch-level features "bleed" into other parts of the shape and fix them. This will improve distilled feature quality but will significantly improve runtime (~5 min longer).
+`--use_sam` will refine the render feature maps by using SAM segmentation to identify areas where patch-level features "bleed" into other parts of the shape and fix them. This will improve distilled feature quality but will increase runtime (~2 min longer).
 
 | Argument | Default | Description |
 |---|---|---|
 | `--texturedir` | `None` | Path to texture image for textured OBJ rendering. GLB models will automatically have their textures extracted using trimesh. |
-| `--saveto` | `vertices` | Saves output feature tensor sampled either over vertices or face centroids. |
-| `--no_cache` | `False` | Skip writing cached intermediates to disk (saves disk space) |
-| `--reduction` | `0` | Fraction of edges to collapse for mesh simplification before processing |
+| `--saveto` | `vertices` | Saves output feature tensor sampled either over vertices (`vertices`) or face centroids (`faces`). |
+| `--no_cache` | `False` | Skip writing cached intermediates to disk (saves disk space). |
+| `--reduction` | `0` | Fraction of edges to collapse for mesh simplification before processing. |
+| `--viewradius` | `2.8` | Camera distance from the mesh center when sampling views. |
 
 **Image model parameters**
 
 | Argument | Default | Description |
 |---|---|---|
-| `--model` | `dino2` | Feature extractor: `dino2`, `dino3`, `diff3f`, `clip`, `sam`, `sam2`, `radio` |
-| `--arch` | `None` | Architecture name for the model (e.g. `dinov2_vitg14_reg`) |
-| `--checkpoint` | `None` | Path to local model checkpoint weights |
-| `--repodir` | `None` | Path to local repository source for the model |
-| `--model_cfg` | `None` | Path to model config file (only relevant for `sam2` model) |
-| `--sam2_hr` | `False` | Concatenate high-resolution SAM2 features |
+| `--model` | `dino2` | Feature extractor: `dino2`, `dino3`, `clip`, `sam`, `sam2`, `radio`. |
+| `--arch` | `None` | Architecture name for the model (e.g. `dinov2_vitg14_reg`). |
+| `--checkpoint` | `None` | Path to local model checkpoint weights. |
+| `--repodir` | `None` | Path to local repository source for the model. |
+| `--model_cfg` | `None` | Path to model config file (only relevant for `sam2`). |
+| `--sam2_hr` | `False` | Concatenate high-resolution SAM2 features. |
 
 **Training parameters**
 
 | Argument | Default | Description |
 |---|---|---|
-| `-H` / `--imgh` | `512` | Render image height |
-| `-W` / `--imgw` | `512` | Render image width |
-| `--nviews` | `24` | Total views to render (should be a multiple of 3 for default viewtype) |
-| `--viewtype` | `default` | View sampling strategy: `default` or `fib` |
-| `--batchsize` | `2` | Views to batch during feature field optimization |
-| `--viewbatchsize` | `16` | Number of views to batch for rendering |
-| `--featurebatchsize` | `2` | Number of views to batch for feature extraction |
-| `--lr` | `1e-3` | Learning rate |
-| `--iters` | `25` | Training iterations |
+| `-H` / `--imgh` | `512` | Render image height. Must be a multiple of the model's patch size. |
+| `-W` / `--imgw` | `512` | Render image width. Must be a multiple of the model's patch size. |
+| `--nviews` | `24` | Total views to render (should be a multiple of 3 for default viewtype). |
+| `--viewtype` | `default` | View sampling strategy: `default` or `fib` (fibonacci). |
+| `--batchsize` | `10000` | Number of (flattened) training points sampled per MLP optimization step. |
+| `--subsetepoch` | `0.1` | Fraction of all flattened training points to randomly sample per iteration. Set to `0` to use the full training set every iteration. |
+| `--viewbatchsize` | `16` | Number of views to batch for rendering. |
+| `--featurebatchsize` | `2` | Number of views to batch for feature extraction. |
+| `--lr` | `1e-3` | Learning rate. |
+| `--iters` | `20` | Training iterations. |
 
 **Gaussian blurring**
 
 | Argument | Default | Description |
 |---|---|---|
-| `--noiseradius` | `0.05` | Maximum radius for sampling noisy positions about each training position |
-| `--noisen` | `0` | Number of noise samples per position sample (disabled by default) |
+| `--noiseradius` | `0.05` | Maximum radius for sampling noisy positions about each training position. |
+| `--noisen` | `0` | Number of noise samples per position sample (disabled by default). |
 
 **SAM feature reassignment**
 
 | Argument | Default | Description |
 |---|---|---|
-| `--use_sam` | `0` | If > 0, uses SAM masks to refine per-pixel features and reduce feature bleeding. Value determines the outlier threshold (L2 distance). Value of 1 is recommended.|
+| `--use_sam` | `0` | If > 0, uses SAM masks to refine per-pixel features and reduce feature bleeding. Value determines the outlier threshold (L2 distance). Value of 1 is recommended. |
 
 **MLP parameters**
 
 | Argument | Default | Description |
 |---|---|---|
-| `--nlayers` | `4` | Number of MLP layers |
-| `--width` | `256` | Hidden layer width |
-| `--positional_encoding` | `False` | Use Fourier features for positional encoding |
-| `--sigma` | `5.0` | Sigma for Fourier features |
+| `--nlayers` | `4` | Number of MLP layers. |
+| `--width` | `256` | Hidden layer width. |
+| `--positional_encoding` | `False` | Use Fourier features for positional encoding. |
+| `--sigma` | `5.0` | Sigma for Fourier features. |
 
 ## Interactive Deformation GUI
 

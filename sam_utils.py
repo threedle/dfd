@@ -69,81 +69,139 @@ def apply_sam_feature_refinement(view_features, batched_sam, pixel_mask,
                                   threshold, featurebatchsize,
                                   H=512, W=512, debug=False, debug_dir=None):
     """
-    Replace outlier features within each SAM segment with the segment's median.
-    Modifies view_features in-place.
+    SAM-segment-driven sub-patch boundary sharpening on patch-resolution
+    feature chunks.
+
+    The intent of this refinement is *sub-patch* boundary sharpening: every
+    pixel that survives patch-replication upsampling otherwise carries the
+    same feature as its containing patch, which blurs over semantic
+    boundaries passing through the *interior* of a patch. SAM segments
+    capture those boundaries from the original render; replacing outlier
+    pixels within each segment with the segment's median feature carves
+    feature-patch boundaries along the SAM segmentation, which explicitly
+    requires per-pixel granularity.
+
+    Because OPT (5) made ``view_features`` patch-resolution
+    (``(A_i, h_patch, w_patch, C)``) we no longer have a full-resolution
+    tensor lying around to mutate in place. This function therefore walks
+    the input list and replaces each chunk with its patch-replicated
+    full-resolution version (``(A_i, H, W, C)``, via ``repeat_interleave``),
+    runs the original pixel-level outlier-replacement loop on each view in
+    the chunk, and returns the same list now holding the SAM-corrected
+    full-resolution chunks. The caller is then expected to mask with
+    ``pixel_mask`` to obtain the flattened per-pixel features used downstream
+    (the existing gather/flatten code in ``distillation.py`` handles full-
+    and patch-resolution chunks uniformly via ``ph = H // h_patch``).
 
     Args:
-        view_features: list of tensors, batched view features
-        batched_sam: output of generate_sam_masks
-        pixel_mask: (B, H, W) boolean mask of valid pixels
-        threshold: distance threshold for outlier detection (args.use_sam value)
-        featurebatchsize: number of views per feature batch
-        H, W: image dimensions
-        debug: whether to save debug visualizations
-        debug_dir: directory for debug output
+        view_features: list of *patch-resolution* feature chunks, each of
+            shape ``(A_i, h_patch, w_patch, C)`` on CPU. Modified in place
+            (each entry is replaced with its full-resolution equivalent).
+        batched_sam: output of ``generate_sam_masks`` (list[list[mask_dict]]).
+        pixel_mask: ``(B, H, W)`` boolean mask of valid pixels (CPU).
+        threshold: distance threshold for outlier detection
+            (``args.use_sam`` value).
+        featurebatchsize: number of views per ``view_features`` chunk
+            (kept for backward compatibility; the function recovers the
+            per-view bookkeeping from each chunk's leading dim directly).
+        H, W: original render dimensions.
+        debug: whether to save before/after PCA visualizations per view.
+        debug_dir: directory for debug output.
+
+    Returns:
+        The same ``view_features`` list, now holding full-resolution
+        ``(A_i, H, W, C)`` chunks with SAM corrections applied.
     """
-    num_renders = pixel_mask.shape[0]
+    h_patch = view_features[0].shape[1]
+    w_patch = view_features[0].shape[2]
+    if H % h_patch != 0 or W % w_patch != 0:
+        raise ValueError(
+            f"Patch grid {h_patch}x{w_patch} does not evenly tile {H}x{W}; "
+            f"render H/W must be a multiple of the model's patch size."
+        )
+    ph = H // h_patch
+    pw = W // w_patch
 
-    for bi in range(num_renders):
-        view_bi = bi // featurebatchsize
-        batch_bi = bi % featurebatchsize
-        sam_mask = batched_sam[bi]
-        occ_mask = pixel_mask[bi].squeeze()
-        occ_mask_cpu = occ_mask.cpu()
-        occ_mask_np = occ_mask_cpu.numpy()
+    bi_global = 0
+    for ci in range(len(view_features)):
+        patch_chunk = view_features[ci]
+        chunk_size = patch_chunk.shape[0]
 
-        if debug and debug_dir is not None:
-            og_pixel_features = view_features[view_bi][batch_bi][
-                occ_mask_cpu
-            ].clone()
+        # Upsample once per chunk: ``repeat_interleave`` allocates a new
+        # contiguous tensor (``(A, H, W, C)``) so we can safely mutate slices
+        # of it via ``chunk_full[batch_bi]`` views without touching the
+        # patch-resolution input. We immediately drop the patch chunk by
+        # reassigning the list slot, keeping peak memory bounded to the
+        # full-resolution chunks accumulated so far.
+        chunk_full = patch_chunk.repeat_interleave(ph, dim=1).repeat_interleave(pw, dim=2)
+        view_features[ci] = chunk_full
+        del patch_chunk
 
-        for ci, cluster_mask in enumerate(sam_mask):
-            seg = cluster_mask['segmentation']
+        for batch_bi in range(chunk_size):
+            bi = bi_global + batch_bi
+            sam_mask = batched_sam[bi]
+            occ_mask_cpu = pixel_mask[bi].squeeze().cpu()
+            occ_mask_np = occ_mask_cpu.numpy()
 
-            # Only include occupied pixels in the cluster
-            cluster_pixels = np.where(seg & occ_mask_np)
+            view_pix = chunk_full[batch_bi]  # writable view into chunk_full
 
-            # Skip background segmentation (no overlap with mesh)
-            if len(cluster_pixels[0]) == 0:
-                continue
+            if debug and debug_dir is not None:
+                og_pixel_features = view_pix[occ_mask_cpu].clone()
 
-            # Skip silhouette segmentation (>90% coverage of union)
-            union_sum = np.sum(seg | occ_mask_np)
-            if len(cluster_pixels[0]) / union_sum >= 0.9:
-                continue
+            for cluster_mask in sam_mask:
+                seg = cluster_mask['segmentation']
 
-            torch_pixels = (
-                torch.from_numpy(cluster_pixels[0]),
-                torch.from_numpy(cluster_pixels[1]),
-            )
-            cluster_pixels = torch_pixels
+                # Only include occupied pixels in the cluster
+                cluster_pixels = np.where(seg & occ_mask_np)
 
-            # Skip if >50% unoccupied
-            occupancy = torch.mean(occ_mask_cpu[seg].float())
-            if occupancy < 0.5:
-                continue
+                # Skip background segmentation (no overlap with mesh)
+                if len(cluster_pixels[0]) == 0:
+                    continue
 
-            pixel_features = view_features[view_bi][batch_bi][cluster_pixels]
+                # Skip silhouette segmentation (>90% coverage of union)
+                union_sum = np.sum(seg | occ_mask_np)
+                if len(cluster_pixels[0]) / union_sum >= 0.9:
+                    continue
 
-            # Compute median feature as cluster representative
-            cluster_feature = torch.median(pixel_features, dim=0)[0]
-            cluster_feature /= torch.linalg.norm(cluster_feature)
+                # Skip if >50% unoccupied
+                occupancy = torch.mean(occ_mask_cpu[seg].float())
+                if occupancy < 0.5:
+                    continue
 
-            # Replace outlier pixels with cluster median
-            distances = torch.linalg.norm(
-                pixel_features - cluster_feature[None], dim=1
-            )
-            pixel_features[distances > threshold] = cluster_feature
-            view_features[view_bi][batch_bi][cluster_pixels] = pixel_features
+                cluster_pixels = (
+                    torch.from_numpy(cluster_pixels[0]),
+                    torch.from_numpy(cluster_pixels[1]),
+                )
 
-        if debug and debug_dir is not None:
-            _save_refinement_debug(
-                view_features[view_bi][batch_bi],
-                og_pixel_features, pixel_mask[bi],
-                bi, H, W, debug_dir
-            )
+                pixel_features = view_pix[cluster_pixels]
+
+                # Compute median feature as cluster representative
+                cluster_feature = torch.median(pixel_features, dim=0)[0]
+                cluster_feature /= torch.linalg.norm(cluster_feature)
+
+                # Replace outlier pixels with cluster median; subsequent
+                # clusters see the modified values, matching the original
+                # in-place algorithm.
+                distances = torch.linalg.norm(
+                    pixel_features - cluster_feature[None], dim=1
+                )
+                outlier = distances > threshold
+                if outlier.any():
+                    h_out = cluster_pixels[0][outlier]
+                    w_out = cluster_pixels[1][outlier]
+                    view_pix[h_out, w_out] = cluster_feature.to(view_pix.dtype)
+
+            if debug and debug_dir is not None:
+                _save_refinement_debug(
+                    view_pix, og_pixel_features, pixel_mask[bi],
+                    bi, H, W, debug_dir,
+                )
+                del og_pixel_features
+
+        bi_global += chunk_size
 
     print("Done with feature wiping")
+    return view_features
 
 
 def _save_sam_debug(render, masks, render_count, debug_dir):
