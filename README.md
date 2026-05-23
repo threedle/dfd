@@ -79,11 +79,11 @@ High resolution meshes (>5m vertices) should be first downsampled before renderi
 | `--nviews` | `24` | Total views to render (should be a multiple of 3 for default viewtype). |
 | `--viewtype` | `default` | View sampling strategy: `default` or `fib` (fibonacci). |
 | `--batchsize` | `10000` | Number of (flattened) training points sampled per MLP optimization step. |
-| `--subsetepoch` | `0.1` | Fraction of all flattened training points to randomly sample per iteration. Set to `0` to use the full training set every iteration. |
+| `--subsetepoch` | `0.1` | Fraction of all training points to randomly sample per epoch. Set to `0` to use the full training set every epoch. |
 | `--viewbatchsize` | `16` | Number of views to batch for rendering. |
 | `--featurebatchsize` | `2` | Number of views to batch for feature extraction. |
 | `--lr` | `1e-3` | Learning rate. |
-| `--iters` | `20` | Training iterations. |
+| `--iters` | `20` | Training iterations/epochs. |
 
 **Gaussian blurring**
 
