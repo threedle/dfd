@@ -268,8 +268,15 @@
     <p class="graybox">
     <b>Results Carousel.</b> We show a selection of results using shapes and prescribed deformations from the APAP and Part-Objaverse Tiny datasets.
     The results show a combination of translation-based and affine deformations, and the corresponding weight heatmap is shown for single-handle deformations.
+    Click any video to view it enlarged.
     </p>
   </section>
+  <div id="video-modal" class="video-modal" role="dialog" aria-modal="true" aria-label="Video preview" aria-hidden="true">
+    <button class="video-modal-close" aria-label="Close video">
+      <i class="fas fa-times" aria-hidden="true"></i>
+    </button>
+    <video id="video-modal-player" controls loop playsinline muted></video>
+  </div>
   <script>
     // upon load, restart and sync the other video in the pair
     const vidloadsyncers = document.getElementsByClassName("vidloadsync");
@@ -347,6 +354,37 @@
       const track = document.getElementById("carousel-track");
       if (!track) return;
 
+      // ── Video popout modal ────────────────────────────────────────────────
+      const modal = document.getElementById("video-modal");
+      const modalVideo = document.getElementById("video-modal-player");
+      const modalClose = modal.querySelector(".video-modal-close");
+
+      function openVideoModal(src) {
+        modalVideo.src = src;
+        modalVideo.playbackRate = 0.70;
+        modal.classList.add("open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+        modalVideo.play().catch(() => {});
+      }
+
+      function closeVideoModal() {
+        modal.classList.remove("open");
+        modal.setAttribute("aria-hidden", "true");
+        modalVideo.pause();
+        modalVideo.removeAttribute("src");
+        modalVideo.load();
+        document.body.style.overflow = "";
+      }
+
+      modalClose.addEventListener("click", closeVideoModal);
+      modal.addEventListener("click", e => {
+        if (e.target === modal) closeVideoModal();
+      });
+      document.addEventListener("keydown", e => {
+        if (e.key === "Escape" && modal.classList.contains("open")) closeVideoModal();
+      });
+
       function makeVideo(src) {
         const vid = document.createElement("video");
         vid.src = src;
@@ -361,6 +399,7 @@
         } else if (HALF_HEIGHT_VIDEOS.includes(filename)) {
           vid.classList.add("carousel-half-height");
         }
+        vid.addEventListener("click", () => openVideoModal(src));
         return vid;
       }
 

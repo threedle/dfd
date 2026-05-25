@@ -346,6 +346,13 @@ video {
   width: auto;
   display: block;
   border-radius: var(--bordrad);
+  cursor: zoom-in;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.carousel-track video:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
 }
 
 .carousel-track video.carousel-quarter-height {
@@ -404,6 +411,74 @@ video {
 
   .carousel-arrow-right {
     margin-left: 6px;
+  }
+}
+
+/* ── Video popout modal ─────────────────────────────────────────────────── */
+.video-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 22, 0.88);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 40px;
+  box-sizing: border-box;
+  cursor: zoom-out;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.video-modal.open {
+  display: flex;
+  opacity: 1;
+}
+
+.video-modal video {
+  max-width: 92vw;
+  max-height: 88vh;
+  width: auto;
+  height: auto;
+  border-radius: var(--bordrad);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+  cursor: default;
+  background: #000;
+}
+
+.video-modal-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: rgb(242, 247, 252);
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: background-color 0.15s;
+}
+
+.video-modal-close:hover {
+  background: var(--accentlight);
+}
+
+@media (max-width: 500px) {
+  .video-modal {
+    padding: 16px;
+  }
+  .video-modal-close {
+    top: 10px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    font-size: 0.95rem;
   }
 }
 
