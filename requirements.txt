@@ -4,7 +4,7 @@ torchvision==0.24.1
 xformers==0.0.33.post2
 
 # Diffusion / vision-transformer models
-diffusers==0.32.2
+diffusers==0.38.0
 accelerate
 transformers
 safetensors
