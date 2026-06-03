@@ -47,7 +47,7 @@ Outputs are saved to `outputs/crab/dinov2_vitg14_reg`, including the trained MLP
 ### Command Line Arguments
 Objs with texture coordinates can be rendered with texture using the `--texturedir` kwarg.
 
-High resolution meshes (>5m vertices) should be first downsampled before rendering by using the `--reduction` kwarg. This calls either GLTF-transform (for GLBs) or QEM decimation (other formats) under the hood. The distillation should take at most a few minutes for any choice of encoder/mesh, but for high resolution shapes the rendering can run into memory issues.
+High resolution meshes (>5m vertices) should be first downsampled before rendering by using the `--reduction` kwarg (0.9 or higher is recommended). This calls either GLTF-transform (for GLBs) or QEM decimation (other formats) under the hood. The distillation should take at most a few minutes for any choice of encoder/mesh, but for high resolution shapes the rendering can run into memory issues.
 
 `--use_sam` will refine the render feature maps by using SAM segmentation to identify areas where patch-level features "bleed" into other parts of the shape and fix them. This will improve distilled feature quality but will increase runtime (~2 min longer).
 
