@@ -157,7 +157,7 @@ h2 {
     font-size: 1rem;
 
     >* {
-      flex: auto;
+      flex: 1 1 0;
       text-align: center;
       margin-left: 6px;
       margin-right: 6px;
